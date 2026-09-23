@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace osuproyecto;
 
@@ -10,4 +11,7 @@ public class Beatmap
     public string Difficulty { get; set; } = string.Empty;
     public int Mode { get; set; }
     public string AudioFilename { get; set; } = string.Empty;
+    public List<TimingPoint> TimingPoints { get; set; } = new List<TimingPoint>();
+    public List<HitObject> HitObjects {get; set;} = new List<HitObject>();
+
 }

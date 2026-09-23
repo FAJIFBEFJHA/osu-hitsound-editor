@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 
 namespace osuproyecto;
 
@@ -14,5 +15,25 @@ public class Program
         Console.WriteLine(beatmap.Difficulty);
         Console.WriteLine(beatmap.Mode);
         Console.WriteLine(beatmap.AudioFilename);
+        Console.WriteLine("Timing points Encontrados: " + beatmap.TimingPoints.Count);
+        Console.WriteLine("HitObjects Encontrados: " + beatmap.HitObjects.Count);
+        {
+            foreach (var timingPoint in beatmap.TimingPoints)
+            {
+                Console.WriteLine("Time: " + timingPoint.Time);
+                Console.WriteLine("Beatmaplength: " + timingPoint.BeatLength);
+                Console.WriteLine("IsUninherited: " + timingPoint.IsUninherited);
+                Console.WriteLine("BPM: " + timingPoint.Bpm);
+            }
+            foreach (var hitObject in beatmap.HitObjects)
+            {
+                Console.WriteLine("X: " + hitObject.X);
+                Console.WriteLine("Y: " + hitObject.Y);
+                Console.WriteLine("Time: " + hitObject.Time);
+                Console.WriteLine("ObjectType: " + hitObject.ObjectType);
+                Console.WriteLine("HitSound: " + hitObject.HitSound);
+            }
+
+        }
     }
 }
