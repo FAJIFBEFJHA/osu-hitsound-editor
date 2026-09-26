@@ -19,4 +19,7 @@ public class TimingPoint
             }
         }
     }
+    public int SampleSet { get; set; }
+    public int SampleIndex { get; set; }
+    public int Volume { get; set; }
 }
