@@ -244,4 +244,152 @@ public class BeatmapTests
 
         Assert.Equal(SampleSetType.Drum, result);
     }
+    [Fact]
+    public void GetHitSoundLayers_NormalOnly_ReturnsSingleNormalLayer()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        HitObject hitObject = new HitObject
+        {
+            Time = 1000,
+            HitSound = 0,
+            HitSample = new HitSample
+            {
+                NormalSet = 1,
+                AdditionSet = 0,
+                Index = 3,
+                Volume = 80
+            }
+        };
+
+        // Act
+        List<HitSoundLayer> layers = beatmap.GetHitSoundLayers(hitObject);
+
+        // Assert
+        Assert.Single(layers);
+
+        Assert.Equal(HitSoundType.Normal, layers[0].Type);
+        Assert.Equal(SampleSetType.Normal, layers[0].SampleSet);
+        Assert.Equal(3, layers[0].SampleIndex);
+        Assert.Equal(80, layers[0].Volume);
+    }
+    [Fact]
+    public void GetHitSoundLayers_NormalAndClap_UsesCorrectSampleSets()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        HitObject hitObject = new HitObject
+        {
+            Time = 1000,
+            HitSound = 8,
+            HitSample = new HitSample
+            {
+                NormalSet = 1,
+                AdditionSet = 2,
+                Index = 4,
+                Volume = 70
+            }
+        };
+
+        // Act
+        List<HitSoundLayer> layers = beatmap.GetHitSoundLayers(hitObject);
+
+        // Assert
+        Assert.Equal(2, layers.Count);
+
+        Assert.Equal(HitSoundType.Normal, layers[0].Type);
+        Assert.Equal(SampleSetType.Normal, layers[0].SampleSet);
+        Assert.Equal(4, layers[0].SampleIndex);
+        Assert.Equal(70, layers[0].Volume);
+
+        Assert.Equal(HitSoundType.Clap, layers[1].Type);
+        Assert.Equal(SampleSetType.Soft, layers[1].SampleSet);
+        Assert.Equal(4, layers[1].SampleIndex);
+        Assert.Equal(70, layers[1].Volume);
+    }
+    [Fact]
+    public void GetHitSoundLayers_AllAdditions_ReturnsFourLayers()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        HitObject hitObject = new HitObject
+        {
+            Time = 1000,
+            HitSound = 14,
+            HitSample = new HitSample
+            {
+                NormalSet = 3,
+                AdditionSet = 2,
+                Index = 5,
+                Volume = 60
+            }
+        };
+
+        // Act
+        List<HitSoundLayer> layers = beatmap.GetHitSoundLayers(hitObject);
+
+        // Assert
+        Assert.Equal(4, layers.Count);
+
+        Assert.Equal(HitSoundType.Normal, layers[0].Type);
+        Assert.Equal(SampleSetType.Drum, layers[0].SampleSet);
+
+        Assert.Equal(HitSoundType.Whistle, layers[1].Type);
+        Assert.Equal(SampleSetType.Soft, layers[1].SampleSet);
+
+        Assert.Equal(HitSoundType.Finish, layers[2].Type);
+        Assert.Equal(SampleSetType.Soft, layers[2].SampleSet);
+
+        Assert.Equal(HitSoundType.Clap, layers[3].Type);
+        Assert.Equal(SampleSetType.Soft, layers[3].SampleSet);
+
+        foreach (HitSoundLayer layer in layers)
+        {
+            Assert.Equal(5, layer.SampleIndex);
+            Assert.Equal(60, layer.Volume);
+        }
+    }
+    [Fact]
+    public void GetHitSoundLayers_CustomFilename_ReplacesAdditionLayer()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        HitObject hitObject = new HitObject
+        {
+            Time = 1000,
+            HitSound = 8,
+            HitSample = new HitSample
+            {
+                NormalSet = 1,
+                AdditionSet = 2,
+                Index = 4,
+                Volume = 70,
+                Filename = "custom.wav"
+            }
+        };
+
+        // Act
+        List<HitSoundLayer> layers = beatmap.GetHitSoundLayers(hitObject);
+
+        // Assert
+        Assert.Equal(2, layers.Count);
+
+        Assert.Equal(HitSoundType.Normal, layers[0].Type);
+        Assert.Equal(SampleSetType.Normal, layers[0].SampleSet);
+        Assert.Equal(4, layers[0].SampleIndex);
+        Assert.Equal(70, layers[0].Volume);
+
+        Assert.Equal(HitSoundType.Custom, layers[1].Type);
+        Assert.Equal("custom.wav", layers[1].Filename);
+        Assert.Equal(70, layers[1].Volume);
+
+        Assert.DoesNotContain(
+            layers,
+            layer => layer.Type == HitSoundType.Clap
+        );
+    }
 }
