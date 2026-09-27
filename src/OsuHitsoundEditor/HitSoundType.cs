@@ -5,5 +5,6 @@ public enum HitSoundType
     Normal,
     Whistle,
     Finish,
-    Clap
+    Clap,
+    Custom
 }

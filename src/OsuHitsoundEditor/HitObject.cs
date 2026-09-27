@@ -121,4 +121,5 @@ public class HitObject
         }
     }
     public int? EndTime {get; set;}
+    public List<SliderEdge> SliderEdges {get; set;} = new List<SliderEdge>();
 }

@@ -134,4 +134,52 @@ public class Beatmap
 
         return hitSoundTypes;
     }
+    public List<HitSoundLayer> GetHitSoundLayers(HitObject hitObject)
+    {
+        List<HitSoundType> hitSoundTypes = GetHitSoundTypes(hitObject);
+        int sampleIndex = GetEffectiveSampleIndex(hitObject);
+        int volume = GetEffectiveVolume(hitObject);
+        SampleSetType normalSetType = GetEffectiveNormalSetType(hitObject);
+        SampleSetType additionSetType = GetEffectiveAdditionSetType(hitObject);
+        string filename = hitObject.HitSample.Filename;
+
+        List<HitSoundLayer> hitSoundLayers = new List<HitSoundLayer>();
+
+
+        foreach (var hitSoundType in hitSoundTypes)
+        {
+            
+            SampleSetType sampleSet;
+                if (hitSoundType == HitSoundType.Normal)
+                {
+                    HitSoundLayer layer = new HitSoundLayer();
+                    sampleSet = normalSetType;
+                    layer.Type = hitSoundType;
+                    layer.SampleSet = sampleSet;
+                    layer.SampleIndex = sampleIndex;
+                    layer.Volume = volume;
+                    hitSoundLayers.Add(layer);
+                }
+                if (hitSoundType != HitSoundType.Normal && string.IsNullOrEmpty(filename))
+                {
+                    HitSoundLayer layer = new HitSoundLayer();
+                    sampleSet = additionSetType;
+                    layer.Type = hitSoundType;
+                    layer.SampleSet = sampleSet;
+                    layer.SampleIndex = sampleIndex;
+                    layer.Volume = volume;
+                    hitSoundLayers.Add(layer);
+                }
+        }
+        if (!string.IsNullOrEmpty(filename))
+        {
+            HitSoundLayer layer = new HitSoundLayer();
+
+            layer.Type = HitSoundType.Custom;
+            layer.Filename = filename;
+            layer.Volume = volume;
+            hitSoundLayers.Add(layer);
+        }
+        return hitSoundLayers;
+    }
 }
