@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 
-namespace osuproyecto;
+namespace OsuHitsoundEditor;
 
 public class BeatmapLoader
 {

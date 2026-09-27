@@ -1,4 +1,4 @@
-namespace osuproyecto;
+namespace OsuHitsoundEditor;
 
 public class TimingPoint
 {

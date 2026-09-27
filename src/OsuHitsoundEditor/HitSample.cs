@@ -1,6 +1,6 @@
 using System;
 
-namespace osuproyecto;
+namespace OsuHitsoundEditor;
 
 public class HitSample
 {

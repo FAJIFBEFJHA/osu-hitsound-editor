@@ -1,4 +1,4 @@
-﻿namespace osuproyecto;
+namespace OsuHitsoundEditor;
 
 public class Beatmap
 {
@@ -9,7 +9,7 @@ public class Beatmap
     public int Mode { get; set; }
     public string AudioFilename { get; set; } = string.Empty;
     public List<TimingPoint> TimingPoints { get; set; } = new List<TimingPoint>();
-    public List<HitObject> HitObjects {get; set;} = new List<HitObject>();
+    public List<HitObject> HitObjects { get; set; } = new List<HitObject>();
     private int ResolveInheritedValue(int ownValue, int? inheritedValue)
     {
         if (ownValue != 0)
@@ -46,7 +46,7 @@ public class Beatmap
             inheritedSampleIndex = activeTimingPoint.SampleIndex;
         }
         int result = ResolveInheritedValue(hitObject.HitSample.Index, inheritedSampleIndex);
-        return result;   
+        return result;
     }
     public int GetEffectiveVolume(HitObject hitObject)
     {
@@ -68,7 +68,7 @@ public class Beatmap
             inheritedSampleSet = activeTimingPoint.SampleSet;
         }
         int result = ResolveInheritedValue(hitObject.HitSample.NormalSet, inheritedSampleSet);
-        return result;  
+        return result;
     }
     public int GetEffectiveAdditionSet(HitObject hitObject)
     {
@@ -82,5 +82,56 @@ public class Beatmap
             return inheritedAddition;
         }
     }
+    public SampleSetType GetSampleSetType(int sampleSet)
+    {
+        switch (sampleSet)
+        {
+            case 1:
+                return SampleSetType.Normal;
+            case 2:
+                return SampleSetType.Soft;
+            case 3:
+                return SampleSetType.Drum;
+            default:
+                return SampleSetType.Default;
+        }
+    }
 
+    public SampleSetType GetEffectiveNormalSetType(HitObject hitObject)
+    {
+        int effectiveNormalSet = GetEffectiveNormalSet(hitObject);
+        SampleSetType sampleSetType = GetSampleSetType(effectiveNormalSet);
+        return sampleSetType;
+    }
+
+    public SampleSetType GetEffectiveAdditionSetType(HitObject hitObject)
+    {
+        int effectiveAdditionSet = GetEffectiveAdditionSet(hitObject);
+        SampleSetType sampleSetType = GetSampleSetType(effectiveAdditionSet);
+        return sampleSetType;
+    }
+
+    public List<HitSoundType> GetHitSoundTypes(HitObject hitObject)
+    {
+        List<HitSoundType> hitSoundTypes = new List<HitSoundType>();
+
+        hitSoundTypes.Add(HitSoundType.Normal);
+
+        if (hitObject.HasWhistle)
+        {
+            hitSoundTypes.Add(HitSoundType.Whistle);
+        }
+
+        if (hitObject.HasFinish)
+        {
+            hitSoundTypes.Add(HitSoundType.Finish);
+        }
+
+        if (hitObject.HasClap)
+        {
+            hitSoundTypes.Add(HitSoundType.Clap);
+        }
+
+        return hitSoundTypes;
+    }
 }
