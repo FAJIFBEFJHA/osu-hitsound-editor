@@ -95,12 +95,11 @@ public class BeatmapLoader
                 hitObject.ObjectType = int.Parse(parts[3]);
                 hitObject.HitSound = int.Parse(parts[4]);
                 beatmap.HitObjects.Add(hitObject);
-                if (hitObject.IsHitCircle)
+                if (hitObject.IsHitCircle && parts.Length > 5)
                 {
-                    if (parts.Length > 5)
-                    {
-                        hitObject.HitSample = ParseHitSample(parts[5]);
-                    }
+
+                    hitObject.HitSample = ParseHitSample(parts[5]);
+
                 }
                 if (hitObject.IsSpinner)
                 {
@@ -114,12 +113,23 @@ public class BeatmapLoader
 
                     }
                 }
-                if (hitObject.IsSlider)
+                if (hitObject.IsSlider && parts.Length > 10)
                 {
-                    if (parts.Length > 10)
+                    hitObject.Slides = int.Parse(parts[6]);
+                    hitObject.Length = double.Parse(parts[7]);
+                    string[] edgeSounds = parts[8].Split('|');
+                    string[] edgeSets = parts[9].Split('|');
+                    for (int i = 0; i < edgeSounds.Length; i++)
                     {
-                        hitObject.HitSample = ParseHitSample(parts[10]);
+                        SliderEdge sliderEdge = new SliderEdge();
+                        sliderEdge.HitSound = int.Parse(edgeSounds[i]);
+                        string[] edgeSet = edgeSets[i].Split(':');
+                        sliderEdge.NormalSet = int.Parse(edgeSet[0]);
+                        sliderEdge.AdditionSet = int.Parse(edgeSet[1]);
+                        hitObject.SliderEdges.Add(sliderEdge);
                     }
+
+                    hitObject.HitSample = ParseHitSample(parts[10]);
                 }
             }
         }

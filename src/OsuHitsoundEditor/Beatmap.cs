@@ -1,3 +1,5 @@
+using System.ComponentModel.Design;
+
 namespace OsuHitsoundEditor;
 
 public class Beatmap
@@ -113,26 +115,7 @@ public class Beatmap
 
     public List<HitSoundType> GetHitSoundTypes(HitObject hitObject)
     {
-        List<HitSoundType> hitSoundTypes = new List<HitSoundType>();
-
-        hitSoundTypes.Add(HitSoundType.Normal);
-
-        if (hitObject.HasWhistle)
-        {
-            hitSoundTypes.Add(HitSoundType.Whistle);
-        }
-
-        if (hitObject.HasFinish)
-        {
-            hitSoundTypes.Add(HitSoundType.Finish);
-        }
-
-        if (hitObject.HasClap)
-        {
-            hitSoundTypes.Add(HitSoundType.Clap);
-        }
-
-        return hitSoundTypes;
+        return GetHitSoundTypes(hitObject.HitSound);
     }
     public List<HitSoundLayer> GetHitSoundLayers(HitObject hitObject)
     {
@@ -148,28 +131,28 @@ public class Beatmap
 
         foreach (var hitSoundType in hitSoundTypes)
         {
-            
+
             SampleSetType sampleSet;
-                if (hitSoundType == HitSoundType.Normal)
-                {
-                    HitSoundLayer layer = new HitSoundLayer();
-                    sampleSet = normalSetType;
-                    layer.Type = hitSoundType;
-                    layer.SampleSet = sampleSet;
-                    layer.SampleIndex = sampleIndex;
-                    layer.Volume = volume;
-                    hitSoundLayers.Add(layer);
-                }
-                if (hitSoundType != HitSoundType.Normal && string.IsNullOrEmpty(filename))
-                {
-                    HitSoundLayer layer = new HitSoundLayer();
-                    sampleSet = additionSetType;
-                    layer.Type = hitSoundType;
-                    layer.SampleSet = sampleSet;
-                    layer.SampleIndex = sampleIndex;
-                    layer.Volume = volume;
-                    hitSoundLayers.Add(layer);
-                }
+            if (hitSoundType == HitSoundType.Normal)
+            {
+                HitSoundLayer layer = new HitSoundLayer();
+                sampleSet = normalSetType;
+                layer.Type = hitSoundType;
+                layer.SampleSet = sampleSet;
+                layer.SampleIndex = sampleIndex;
+                layer.Volume = volume;
+                hitSoundLayers.Add(layer);
+            }
+            if (hitSoundType != HitSoundType.Normal && string.IsNullOrEmpty(filename))
+            {
+                HitSoundLayer layer = new HitSoundLayer();
+                sampleSet = additionSetType;
+                layer.Type = hitSoundType;
+                layer.SampleSet = sampleSet;
+                layer.SampleIndex = sampleIndex;
+                layer.Volume = volume;
+                hitSoundLayers.Add(layer);
+            }
         }
         if (!string.IsNullOrEmpty(filename))
         {
@@ -182,4 +165,85 @@ public class Beatmap
         }
         return hitSoundLayers;
     }
+    public List<HitSoundType> GetHitSoundTypes(int hitSound)
+    {
+        List<HitSoundType> hitSoundTypes = new List<HitSoundType>();
+
+        hitSoundTypes.Add(HitSoundType.Normal);
+        if ((hitSound & 2) != 0)
+        {
+            hitSoundTypes.Add(HitSoundType.Whistle);
+        }
+        if ((hitSound & 4) != 0)
+        {
+            hitSoundTypes.Add(HitSoundType.Finish);
+        }
+        if ((hitSound & 8) != 0)
+        {
+            hitSoundTypes.Add(HitSoundType.Clap);
+        }
+        return hitSoundTypes;
+    }
+    public int GetEffectiveNormalSet(SliderEdge sliderEdge, int time)
+    {
+        TimingPoint? activePoint = GetActiveTimingPoint(time);
+        return ResolveInheritedValue(sliderEdge.NormalSet, activePoint?.SampleSet);
+    }
+    public int GetEffectiveAdditionSet(SliderEdge sliderEdge, int time)
+    {
+        return ResolveInheritedValue(sliderEdge.AdditionSet, GetEffectiveNormalSet(sliderEdge, time));
+    }
+    public SampleSetType GetEffectiveNormalSetType(SliderEdge sliderEdge, int time)
+    {
+        int normalSet = GetEffectiveNormalSet(sliderEdge, time);
+        return GetSampleSetType(normalSet);
+    }
+    public SampleSetType GetEffectiveAdditionSetType(SliderEdge sliderEdge, int time)
+    {
+        int additionSet = GetEffectiveAdditionSet(sliderEdge, time);
+        return GetSampleSetType(additionSet);
+    }
+    public int GetEffectiveSampleIndex(HitSample hitSample, int time)
+    {
+        TimingPoint? activePoint = GetActiveTimingPoint(time);
+        return ResolveInheritedValue(hitSample.Index, activePoint?.SampleIndex);
+    }
+    public int GetEffectiveVolume(HitSample hitSample, int time)
+    {
+        TimingPoint? activePoint = GetActiveTimingPoint(time);
+        return ResolveInheritedValue(hitSample.Volume, activePoint?.Volume);
+    }
+    public List<HitSoundLayer> GetHitSoundLayers(SliderEdge sliderEdge, HitSample hitSample, int time)
+    {
+        List<HitSoundLayer> hitSoundLayers = new List<HitSoundLayer>();
+
+        List<HitSoundType> hitSoundTypes = GetHitSoundTypes(sliderEdge.HitSound);
+        SampleSetType normalSetType = GetEffectiveNormalSetType(sliderEdge, time);
+        SampleSetType additionSetType = GetEffectiveAdditionSetType(sliderEdge, time);
+        int sampleIndex = GetEffectiveSampleIndex(hitSample, time);
+        int volume = GetEffectiveVolume(hitSample, time);
+
+        foreach (var hitSoundType in hitSoundTypes)
+        {
+            SampleSetType sampleSet;
+            if (hitSoundType == HitSoundType.Normal)
+            {
+                sampleSet = normalSetType;
+            }
+            else
+            {
+                sampleSet = additionSetType;
+                
+            }
+            HitSoundLayer layer = new HitSoundLayer();
+            layer.Type = hitSoundType;
+            layer.SampleSet = sampleSet;
+            layer.SampleIndex = sampleIndex;
+            layer.Volume = volume;
+
+            hitSoundLayers.Add(layer);
+        }
+        return hitSoundLayers;
+    }
 }
+
