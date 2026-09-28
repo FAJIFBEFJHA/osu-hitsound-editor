@@ -116,4 +116,52 @@ public class BeatmapLoaderTests
         Assert.Equal(75, spinner.HitSample.Volume);
         Assert.Equal("spinner.wav", spinner.HitSample.Filename);
     }
+    [Fact]
+    public void Load_Slider_ParsesSliderEdges()
+    {
+        // Arrange
+        string path = Path.Combine(
+            AppContext.BaseDirectory,
+            "TestData",
+            "basic-beatmap.osu"
+        );
+
+        BeatmapLoader loader = new BeatmapLoader();
+
+        // Act
+        Beatmap beatmap = loader.Load(path);
+
+        HitObject slider = beatmap.HitObjects.First(
+            hitObject => hitObject.IsSlider
+        );
+
+        // Assert
+        Assert.Equal(3, slider.SliderEdges.Count);
+
+        Assert.Equal(4, slider.SliderEdges[0].HitSound);
+        Assert.Equal(1, slider.SliderEdges[0].NormalSet);
+        Assert.Equal(2, slider.SliderEdges[0].AdditionSet);
+
+        Assert.Equal(8, slider.SliderEdges[1].HitSound);
+        Assert.Equal(2, slider.SliderEdges[1].NormalSet);
+        Assert.Equal(3, slider.SliderEdges[1].AdditionSet);
+
+        Assert.Equal(2, slider.SliderEdges[2].HitSound);
+        Assert.Equal(3, slider.SliderEdges[2].NormalSet);
+        Assert.Equal(1, slider.SliderEdges[2].AdditionSet);
+    }
+    [Fact]
+    public void Load_ReadsSliderProperties()
+    {
+        BeatmapLoader loader = new BeatmapLoader();
+
+        Beatmap beatmap = loader.Load(GetTestBeatmapPath());
+
+        HitObject slider = beatmap.HitObjects.First(
+            hitObject => hitObject.IsSlider
+        );
+
+        Assert.Equal(2, slider.Slides);
+        Assert.Equal(120, slider.Length);
+    }
 }
