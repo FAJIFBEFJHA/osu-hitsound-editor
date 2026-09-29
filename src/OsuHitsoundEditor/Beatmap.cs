@@ -1,5 +1,3 @@
-using System.ComponentModel.Design;
-
 namespace OsuHitsoundEditor;
 
 public class Beatmap
@@ -8,6 +6,8 @@ public class Beatmap
     public string Artist { get; set; } = string.Empty;
     public string Creator { get; set; } = string.Empty;
     public string Difficulty { get; set; } = string.Empty;
+    public double SliderMultiplier { get; set; }
+    public SampleSetType DefaultSampleSet {get; set;} = SampleSetType.Normal;
     public int Mode { get; set; }
     public string AudioFilename { get; set; } = string.Empty;
     public List<TimingPoint> TimingPoints { get; set; } = new List<TimingPoint>();
@@ -222,28 +222,39 @@ public class Beatmap
         SampleSetType additionSetType = GetEffectiveAdditionSetType(sliderEdge, time);
         int sampleIndex = GetEffectiveSampleIndex(hitSample, time);
         int volume = GetEffectiveVolume(hitSample, time);
+        string filename = hitSample.Filename;
 
         foreach (var hitSoundType in hitSoundTypes)
         {
-            SampleSetType sampleSet;
             if (hitSoundType == HitSoundType.Normal)
             {
-                sampleSet = normalSetType;
+                HitSoundLayer layer = new HitSoundLayer();
+                layer.Type = hitSoundType;
+                layer.SampleSet = normalSetType;
+                layer.SampleIndex = sampleIndex;
+                layer.Volume = volume;
+                hitSoundLayers.Add(layer);
             }
-            else
+            if (hitSoundType != HitSoundType.Normal && string.IsNullOrEmpty(filename))
             {
-                sampleSet = additionSetType;
-                
+                HitSoundLayer layer = new HitSoundLayer();
+                layer.Type = hitSoundType;
+                layer.SampleSet = additionSetType;
+                layer.SampleIndex = sampleIndex;
+                layer.Volume = volume;
+                hitSoundLayers.Add(layer);
             }
+        }
+        if (!string.IsNullOrEmpty(filename))
+        {
             HitSoundLayer layer = new HitSoundLayer();
-            layer.Type = hitSoundType;
-            layer.SampleSet = sampleSet;
-            layer.SampleIndex = sampleIndex;
+            layer.Type = HitSoundType.Custom;
+            layer.Filename = filename;
             layer.Volume = volume;
-
             hitSoundLayers.Add(layer);
         }
         return hitSoundLayers;
     }
+
 }
 

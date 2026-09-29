@@ -3,6 +3,7 @@ osu file format v14
 [General]
 AudioFilename:test.mp3
 Mode:0
+SampleSet:Soft
 
 [Metadata]
 Title:Test Song
@@ -13,6 +14,9 @@ Version:Test Difficulty
 [TimingPoints]
 1000,500,4,2,3,70,1,0
 2000,-50,4,3,4,60,0,0
+
+[Difficulty]
+SliderMultiplier:1.4
 
 [HitObjects]
 64,64,1500,1,8,1:2:5:80:circle.wav

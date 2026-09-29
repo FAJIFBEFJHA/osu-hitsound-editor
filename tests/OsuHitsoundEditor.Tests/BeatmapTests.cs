@@ -697,4 +697,40 @@ public class BeatmapTests
         Assert.Equal(5, layers[1].SampleIndex);
         Assert.Equal(80, layers[1].Volume);
     }
+    [Fact]
+    public void GetHitSoundLayers_SliderEdgeWithCustomFilename_ReplacesAdditionalLayer()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        SliderEdge sliderEdge = new SliderEdge
+        {
+            HitSound = 8,
+            NormalSet = 1,
+            AdditionSet = 3
+        };
+
+        HitSample hitSample = new HitSample
+        {
+            Index = 5,
+            Volume = 80,
+            Filename = "snare.wav"
+        };
+
+        // Act
+        List<HitSoundLayer> layers =
+            beatmap.GetHitSoundLayers(sliderEdge, hitSample, 2500);
+
+        // Assert
+        Assert.Equal(2, layers.Count);
+
+        Assert.Equal(HitSoundType.Normal, layers[0].Type);
+        Assert.Equal(SampleSetType.Normal, layers[0].SampleSet);
+        Assert.Equal(5, layers[0].SampleIndex);
+        Assert.Equal(80, layers[0].Volume);
+
+        Assert.Equal(HitSoundType.Custom, layers[1].Type);
+        Assert.Equal("snare.wav", layers[1].Filename);
+        Assert.Equal(80, layers[1].Volume);
+    }
 }

@@ -164,4 +164,16 @@ public class BeatmapLoaderTests
         Assert.Equal(2, slider.Slides);
         Assert.Equal(120, slider.Length);
     }
+    [Fact]
+    public void Load_ReadsDefaultSampleSet()
+    {
+        // Arrange
+        BeatmapLoader loader = new BeatmapLoader();
+
+        // Act
+        Beatmap beatmap = loader.Load(GetTestBeatmapPath());
+
+        // Assert
+        Assert.Equal(SampleSetType.Soft, beatmap.DefaultSampleSet);
+    }
 }
