@@ -733,4 +733,157 @@ public class BeatmapTests
         Assert.Equal("snare.wav", layers[1].Filename);
         Assert.Equal(80, layers[1].Volume);
     }
+    [Fact]
+    public void GetEffectiveNormalSetType_HitObjectWithDefaultTimingSet_UsesBeatmapDefaultSampleSet()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            DefaultSampleSet = SampleSetType.Soft
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            SampleSet = 0
+        });
+
+        HitObject hitObject = new HitObject
+        {
+            Time = 1500,
+            HitSample = new HitSample
+            {
+                NormalSet = 0
+            }
+        };
+
+        // Act
+        SampleSetType result = beatmap.GetEffectiveNormalSetType(hitObject);
+
+        // Assert
+        Assert.Equal(SampleSetType.Soft, result);
+    }
+
+    [Fact]
+    public void GetEffectiveNormalSetType_SliderEdgeWithDefaultTimingSet_UsesBeatmapDefaultSampleSet()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            DefaultSampleSet = SampleSetType.Drum
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 2000,
+            SampleSet = 0
+        });
+
+        SliderEdge sliderEdge = new SliderEdge
+        {
+            NormalSet = 0
+        };
+
+        // Act
+        SampleSetType result =
+            beatmap.GetEffectiveNormalSetType(sliderEdge, 2500);
+
+        // Assert
+        Assert.Equal(SampleSetType.Drum, result);
+    }
+    [Fact]
+    public void GetActiveUninheritedTimingPoint_ReturnsLatestUninheritedPointBeforeTime()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        TimingPoint firstUninherited = new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        };
+
+        TimingPoint inherited = new TimingPoint
+        {
+            Time = 1500,
+            BeatLength = -50,
+            IsUninherited = false
+        };
+
+        beatmap.TimingPoints.Add(firstUninherited);
+        beatmap.TimingPoints.Add(inherited);
+
+        // Act
+        TimingPoint? result =
+            beatmap.GetActiveUninheritedTimingPoint(1700);
+
+        // Assert
+        Assert.Same(firstUninherited, result);
+    }
+
+    [Fact]
+    public void GetActiveInheritedTimingPoint_WhenInheritedPointIsActive_ReturnsIt()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        TimingPoint inherited = new TimingPoint
+        {
+            Time = 1500,
+            BeatLength = -50,
+            IsUninherited = false
+        };
+
+        beatmap.TimingPoints.Add(inherited);
+
+        // Act
+        TimingPoint? result =
+            beatmap.GetActiveInheritedTimingPoint(1700);
+
+        // Assert
+        Assert.Same(inherited, result);
+    }
+
+    [Fact]
+    public void GetActiveInheritedTimingPoint_WhenUninheritedPointIsActive_ReturnsNull()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1500,
+            BeatLength = -50,
+            IsUninherited = false
+        });
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 2000,
+            BeatLength = 400,
+            IsUninherited = true
+        });
+
+        // Act
+        TimingPoint? result =
+            beatmap.GetActiveInheritedTimingPoint(2300);
+
+        // Assert
+        Assert.Null(result);
+    }
 }

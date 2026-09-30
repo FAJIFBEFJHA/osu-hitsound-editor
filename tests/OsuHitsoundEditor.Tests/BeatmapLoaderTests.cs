@@ -176,4 +176,49 @@ public class BeatmapLoaderTests
         // Assert
         Assert.Equal(SampleSetType.Soft, beatmap.DefaultSampleSet);
     }
+    [Fact]
+    public void Load_ReadsGeneralSettings()
+    {
+        BeatmapLoader loader = new BeatmapLoader();
+
+        Beatmap beatmap = loader.Load(GetTestBeatmapPath());
+
+        Assert.Equal(500, beatmap.AudioLeadIn);
+        Assert.Equal(15000, beatmap.PreviewTime);
+        Assert.Equal(1, beatmap.Countdown);
+        Assert.Equal(SampleSetType.Soft, beatmap.DefaultSampleSet);
+    }
+
+    [Fact]
+    public void Load_ReadsEditorSettings()
+    {
+        BeatmapLoader loader = new BeatmapLoader();
+
+        Beatmap beatmap = loader.Load(GetTestBeatmapPath());
+
+        Assert.Equal(4, beatmap.BeatDivisor);
+        Assert.Equal(1.5, beatmap.DistanceSpacing);
+        Assert.Equal(8, beatmap.GridSize);
+        Assert.Equal(2, beatmap.TimelineZoom);
+
+        Assert.Equal(3, beatmap.Bookmarks.Count);
+        Assert.Equal(1200, beatmap.Bookmarks[0]);
+        Assert.Equal(2400, beatmap.Bookmarks[1]);
+        Assert.Equal(3600, beatmap.Bookmarks[2]);
+    }
+
+    [Fact]
+    public void Load_ReadsDifficultySettings()
+    {
+        BeatmapLoader loader = new BeatmapLoader();
+
+        Beatmap beatmap = loader.Load(GetTestBeatmapPath());
+
+        Assert.Equal(5, beatmap.HPDrainRate);
+        Assert.Equal(4, beatmap.CircleSize);
+        Assert.Equal(7, beatmap.OverallDifficulty);
+        Assert.Equal(8, beatmap.ApproachRate);
+        Assert.Equal(1.4, beatmap.SliderMultiplier);
+        Assert.Equal(1, beatmap.SliderTickRate);
+    }
 }
