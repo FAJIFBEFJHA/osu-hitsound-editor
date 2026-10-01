@@ -1,3 +1,5 @@
+using System.Runtime.Intrinsics.Arm;
+
 namespace OsuHitsoundEditor;
 
 public class Beatmap
@@ -47,7 +49,7 @@ public class Beatmap
         }
     }
     // TIMING
-    public TimingPoint? GetActiveTimingPoint(int time)
+    public TimingPoint? GetActiveTimingPoint(double time)
     {
         TimingPoint? activeTimingPoint = null;
         foreach (var timingPoint in TimingPoints)
@@ -59,7 +61,7 @@ public class Beatmap
         }
         return activeTimingPoint;
     }
-    public TimingPoint? GetActiveUninheritedTimingPoint(int time)
+    public TimingPoint? GetActiveUninheritedTimingPoint(double time)
     {
         TimingPoint? activeTimingPoint = null;
         foreach (var timingPoint in TimingPoints)
@@ -71,7 +73,7 @@ public class Beatmap
         }
         return activeTimingPoint;
     }
-    public TimingPoint? GetActiveInheritedTimingPoint(int time)
+    public TimingPoint? GetActiveInheritedTimingPoint(double time)
     {
         TimingPoint? activeTimingPoint = GetActiveTimingPoint(time);
 
@@ -84,6 +86,49 @@ public class Beatmap
             return activeTimingPoint;
         }
         return null;
+    }
+    public double GetEffectiveSliderVelocityMultiplier(double time)
+    {
+        TimingPoint? timingPoint = GetActiveInheritedTimingPoint(time);
+        if (timingPoint == null)
+        {
+            return 1.0;
+        }
+        else
+        {
+            return 100 / -timingPoint.BeatLength;
+        }
+    }
+    //SLIDERS — TIMING
+    public double GetSliderSpanDuration(HitObject slider)
+    {
+        TimingPoint? sliderTiming = GetActiveUninheritedTimingPoint(slider.Time);
+        if (sliderTiming == null)
+        {
+            throw new InvalidOperationException("It is not possible to calculate the slider span duration without an active uninherited timing point.");
+        }
+        double sliderVelocity = GetEffectiveSliderVelocityMultiplier(slider.Time);
+        return slider.Length / (SliderMultiplier * 100 * sliderVelocity) * sliderTiming.BeatLength;
+    }
+    public double GetSliderDuration(HitObject slider)
+    {
+        if (slider.Slides <= 0)
+        {
+            throw new InvalidOperationException("It is not possible to calculate the slider duration because the slider must have at least one span.");
+        }
+        return GetSliderSpanDuration(slider) * slider.Slides;
+    }
+    public double GetSliderEdgeTime(HitObject slider, int edgeIndex)
+    {
+        if (slider.Slides <= 0)
+        {
+            throw new InvalidOperationException("It is not possible to calculate a slider edge time because the slider must have at least one span.");
+        }
+        if (edgeIndex < 0 || edgeIndex > slider.Slides)
+        {
+            throw new ArgumentOutOfRangeException(nameof(edgeIndex), edgeIndex, $"The slider edge index must be between 0 and {slider.Slides}.");
+        }
+        return slider.Time + GetSliderSpanDuration(slider) * edgeIndex;
     }
     // SAMPLE SETS
     public SampleSetType GetSampleSetType(int sampleSet)
@@ -171,31 +216,31 @@ public class Beatmap
         return sampleSetType;
     }
     //SLIDER EDGE — EFFECTIVE VALUES
-    public int GetEffectiveNormalSet(SliderEdge sliderEdge, int time)
+    public int GetEffectiveNormalSet(SliderEdge sliderEdge, double time)
     {
         TimingPoint? activePoint = GetActiveTimingPoint(time);
         return ResolveInheritedValue(sliderEdge.NormalSet, activePoint?.SampleSet);
     }
-    public int GetEffectiveAdditionSet(SliderEdge sliderEdge, int time)
+    public int GetEffectiveAdditionSet(SliderEdge sliderEdge, double time)
     {
         return ResolveInheritedValue(sliderEdge.AdditionSet, GetEffectiveNormalSet(sliderEdge, time));
     }
-    public SampleSetType GetEffectiveNormalSetType(SliderEdge sliderEdge, int time)
+    public SampleSetType GetEffectiveNormalSetType(SliderEdge sliderEdge, double time)
     {
         int normalSet = GetEffectiveNormalSet(sliderEdge, time);
         return GetResolvedSampleSetType(normalSet);
     }
-    public SampleSetType GetEffectiveAdditionSetType(SliderEdge sliderEdge, int time)
+    public SampleSetType GetEffectiveAdditionSetType(SliderEdge sliderEdge, double time)
     {
         int additionSet = GetEffectiveAdditionSet(sliderEdge, time);
         return GetResolvedSampleSetType(additionSet);
     }
-    public int GetEffectiveSampleIndex(HitSample hitSample, int time)
+    public int GetEffectiveSampleIndex(HitSample hitSample, double time)
     {
         TimingPoint? activePoint = GetActiveTimingPoint(time);
         return ResolveInheritedValue(hitSample.Index, activePoint?.SampleIndex);
     }
-    public int GetEffectiveVolume(HitSample hitSample, int time)
+    public int GetEffectiveVolume(HitSample hitSample, double time)
     {
         TimingPoint? activePoint = GetActiveTimingPoint(time);
         return ResolveInheritedValue(hitSample.Volume, activePoint?.Volume);
@@ -272,7 +317,7 @@ public class Beatmap
         }
         return hitSoundLayers;
     }
-    public List<HitSoundLayer> GetHitSoundLayers(SliderEdge sliderEdge, HitSample hitSample, int time)
+    public List<HitSoundLayer> GetHitSoundLayers(SliderEdge sliderEdge, HitSample hitSample, double time)
     {
         List<HitSoundLayer> hitSoundLayers = new List<HitSoundLayer>();
 
@@ -311,6 +356,40 @@ public class Beatmap
             layer.Filename = filename;
             layer.Volume = volume;
             hitSoundLayers.Add(layer);
+        }
+        return hitSoundLayers;
+    }
+    public List<HitSoundLayer> GetSliderEdgeHitSoundLayers(HitObject slider, int edgeIndex)
+    {
+        double edgeTime = GetSliderEdgeTime(slider, edgeIndex);
+        if (slider.SliderEdges.Count != slider.Slides + 1)
+        {
+            throw new InvalidOperationException($"It is not possible to resolve slider edge hitsounds because the slider has {slider.SliderEdges.Count} edges but requires {slider.Slides + 1}.");
+        }
+        SliderEdge sliderEdge = slider.SliderEdges[edgeIndex];
+        return GetHitSoundLayers(sliderEdge, slider.HitSample, edgeTime);
+    }
+    public List<HitSoundLayer> GetSliderBodyHitSoundLayers(HitObject slider)
+    {
+        int sampleIndex = GetEffectiveSampleIndex(slider);
+        int volume = GetEffectiveVolume(slider);
+        SampleSetType normalSet = GetEffectiveNormalSetType(slider);
+        SampleSetType additionSet = GetEffectiveAdditionSetType(slider);
+        List<HitSoundLayer> hitSoundLayers = new List<HitSoundLayer>();
+        HitSoundLayer sliderSlide = new HitSoundLayer();
+        sliderSlide.Type = HitSoundType.SliderSlide;
+        sliderSlide.SampleSet = normalSet;
+        sliderSlide.SampleIndex = sampleIndex;
+        sliderSlide.Volume = volume;
+        hitSoundLayers.Add(sliderSlide);
+        if (slider.HasWhistle)
+        {
+            HitSoundLayer sliderWhistle = new HitSoundLayer();
+            sliderWhistle.Type = HitSoundType.SliderWhistle;
+            sliderWhistle.SampleSet = additionSet;
+            sliderWhistle.SampleIndex = sampleIndex;
+            sliderWhistle.Volume = volume;
+            hitSoundLayers.Add(sliderWhistle);
         }
         return hitSoundLayers;
     }

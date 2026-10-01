@@ -886,4 +886,578 @@ public class BeatmapTests
         // Assert
         Assert.Null(result);
     }
+    [Fact]
+    public void GetEffectiveSliderVelocityMultiplier_WithoutInheritedTimingPoint_ReturnsOne()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        // Act
+        double result = beatmap.GetEffectiveSliderVelocityMultiplier(1500);
+
+        // Assert
+        Assert.Equal(1.0, result);
+    }
+
+    [Theory]
+    [InlineData(-100, 1.0)]
+    [InlineData(-50, 2.0)]
+    [InlineData(-25, 4.0)]
+    [InlineData(-200, 0.5)]
+    public void GetEffectiveSliderVelocityMultiplier_WithInheritedTimingPoint_ReturnsExpectedMultiplier(
+        double beatLength,
+        double expectedMultiplier)
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1500,
+            BeatLength = beatLength,
+            IsUninherited = false
+        });
+
+        // Act
+        double result = beatmap.GetEffectiveSliderVelocityMultiplier(1700);
+
+        // Assert
+        Assert.Equal(expectedMultiplier, result);
+    }
+    [Fact]
+    public void GetSliderSpanDuration_WithNormalVelocity_ReturnsExpectedDuration()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            SliderMultiplier = 1.4
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            Length = 280
+        };
+
+        // Act
+        double result = beatmap.GetSliderSpanDuration(slider);
+
+        // Assert
+        Assert.Equal(1000, result);
+    }
+
+    [Fact]
+    public void GetSliderSpanDuration_WithDoubleSliderVelocity_ReturnsHalfDuration()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            SliderMultiplier = 1.4
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1200,
+            BeatLength = -50,
+            IsUninherited = false
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            Length = 280
+        };
+
+        // Act
+        double result = beatmap.GetSliderSpanDuration(slider);
+
+        // Assert
+        Assert.Equal(500, result);
+    }
+    [Fact]
+    public void GetSliderSpanDuration_WithoutUninheritedTimingPoint_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            SliderMultiplier = 1.4
+        };
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            Length = 280
+        };
+
+        // Act & Assert
+        Assert.Throws<InvalidOperationException>(
+            () => beatmap.GetSliderSpanDuration(slider));
+    }
+    [Fact]
+    public void GetSliderDuration_WithOneSpan_ReturnsSpanDuration()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            SliderMultiplier = 1.4
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            Length = 280,
+            Slides = 1
+        };
+
+        // Act
+        double result = beatmap.GetSliderDuration(slider);
+
+        // Assert
+        Assert.Equal(1000, result);
+    }
+
+    [Fact]
+    public void GetSliderDuration_WithMultipleSpans_ReturnsTotalDuration()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            SliderMultiplier = 1.4
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            Length = 280,
+            Slides = 3
+        };
+
+        // Act
+        double result = beatmap.GetSliderDuration(slider);
+
+        // Assert
+        Assert.Equal(3000, result);
+    }
+
+    [Fact]
+    public void GetSliderDuration_WithDoubleSliderVelocity_UsesEffectiveSpanDuration()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            SliderMultiplier = 1.4
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1200,
+            BeatLength = -50,
+            IsUninherited = false
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            Length = 280,
+            Slides = 2
+        };
+
+        // Act
+        double result = beatmap.GetSliderDuration(slider);
+
+        // Assert
+        Assert.Equal(1000, result);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void GetSliderDuration_WithInvalidSlides_ThrowsInvalidOperationException(int slides)
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        HitObject slider = new HitObject
+        {
+            Slides = slides
+        };
+
+        // Act & Assert
+        Assert.Throws<InvalidOperationException>(
+            () => beatmap.GetSliderDuration(slider));
+    }
+    [Theory]
+    [InlineData(0, 1500)]
+    [InlineData(1, 2000)]
+    [InlineData(2, 2500)]
+    [InlineData(3, 3000)]
+    public void GetSliderEdgeTime_WithValidEdgeIndex_ReturnsExpectedTime(
+    int edgeIndex,
+    double expectedTime)
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            SliderMultiplier = 1.4
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            Length = 140,
+            Slides = 3
+        };
+
+        // Act
+        double result = beatmap.GetSliderEdgeTime(slider, edgeIndex);
+
+        // Assert
+        Assert.Equal(expectedTime, result);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTime_WithInvalidSlides_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        HitObject slider = new HitObject
+        {
+            Slides = 0
+        };
+
+        // Act & Assert
+        Assert.Throws<InvalidOperationException>(
+            () => beatmap.GetSliderEdgeTime(slider, 0));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(4)]
+    public void GetSliderEdgeTime_WithOutOfRangeEdgeIndex_ThrowsArgumentOutOfRangeException(
+        int edgeIndex)
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        HitObject slider = new HitObject
+        {
+            Slides = 3
+        };
+
+        // Act
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => beatmap.GetSliderEdgeTime(slider, edgeIndex));
+
+        // Assert
+        Assert.Equal(nameof(edgeIndex), exception.ParamName);
+        Assert.Equal(edgeIndex, exception.ActualValue);
+    }
+    [Fact]
+    public void GetSliderEdgeHitSoundLayers_WithValidEdge_ReturnsExpectedLayers()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            SliderMultiplier = 1.4
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            SampleSet = 1,
+            SampleIndex = 2,
+            Volume = 80,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            Length = 140,
+            Slides = 1,
+            HitSample = new HitSample()
+        };
+
+        slider.SliderEdges.Add(new SliderEdge
+        {
+            HitSound = 0,
+            NormalSet = 0,
+            AdditionSet = 0
+        });
+
+        slider.SliderEdges.Add(new SliderEdge
+        {
+            HitSound = 8,
+            NormalSet = 0,
+            AdditionSet = 0
+        });
+
+        // Act
+        List<HitSoundLayer> result =
+            beatmap.GetSliderEdgeHitSoundLayers(slider, 1);
+
+        // Assert
+        Assert.Equal(2, result.Count);
+
+        Assert.Equal(HitSoundType.Normal, result[0].Type);
+        Assert.Equal(HitSoundType.Clap, result[1].Type);
+
+        Assert.Equal(SampleSetType.Normal, result[0].SampleSet);
+        Assert.Equal(SampleSetType.Normal, result[1].SampleSet);
+
+        Assert.Equal(2, result[0].SampleIndex);
+        Assert.Equal(80, result[0].Volume);
+    }
+    [Fact]
+    public void GetSliderEdgeHitSoundLayers_UsesTimingPointAtEdgeTime()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            SliderMultiplier = 1.4
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            SampleSet = 1,
+            SampleIndex = 2,
+            Volume = 80,
+            IsUninherited = true
+        });
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1800,
+            BeatLength = -100,
+            SampleSet = 2,
+            SampleIndex = 5,
+            Volume = 60,
+            IsUninherited = false
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            Length = 140,
+            Slides = 2,
+            HitSample = new HitSample()
+        };
+
+        slider.SliderEdges.Add(new SliderEdge());
+        slider.SliderEdges.Add(new SliderEdge());
+        slider.SliderEdges.Add(new SliderEdge());
+
+        // Act
+        List<HitSoundLayer> result =
+            beatmap.GetSliderEdgeHitSoundLayers(slider, 1);
+
+        // Assert
+        Assert.Single(result);
+
+        Assert.Equal(SampleSetType.Soft, result[0].SampleSet);
+        Assert.Equal(5, result[0].SampleIndex);
+        Assert.Equal(60, result[0].Volume);
+    }
+    [Fact]
+    public void GetSliderEdgeHitSoundLayers_WithIncorrectEdgeCount_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            SliderMultiplier = 1.4
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            Length = 140,
+            Slides = 2
+        };
+
+        slider.SliderEdges.Add(new SliderEdge());
+        slider.SliderEdges.Add(new SliderEdge());
+
+        // Act & Assert
+        Assert.Throws<InvalidOperationException>(
+            () => beatmap.GetSliderEdgeHitSoundLayers(slider, 1));
+    }
+    [Fact]
+    public void GetSliderBodyHitSoundLayers_WithoutWhistle_ReturnsSliderSlideOnly()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            SampleSet = 2,
+            SampleIndex = 4,
+            Volume = 70,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            HitSound = 0,
+            HitSample = new HitSample()
+        };
+
+        // Act
+        List<HitSoundLayer> result =
+            beatmap.GetSliderBodyHitSoundLayers(slider);
+
+        // Assert
+        Assert.Single(result);
+
+        Assert.Equal(HitSoundType.SliderSlide, result[0].Type);
+        Assert.Equal(SampleSetType.Soft, result[0].SampleSet);
+        Assert.Equal(4, result[0].SampleIndex);
+        Assert.Equal(70, result[0].Volume);
+    }
+
+    [Fact]
+    public void GetSliderBodyHitSoundLayers_WithWhistle_ReturnsSlideAndWhistle()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            SampleSet = 1,
+            SampleIndex = 3,
+            Volume = 80,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            HitSound = 2,
+            HitSample = new HitSample
+            {
+                NormalSet = 2,
+                AdditionSet = 3
+            }
+        };
+
+        // Act
+        List<HitSoundLayer> result =
+            beatmap.GetSliderBodyHitSoundLayers(slider);
+
+        // Assert
+        Assert.Equal(2, result.Count);
+
+        Assert.Equal(HitSoundType.SliderSlide, result[0].Type);
+        Assert.Equal(SampleSetType.Soft, result[0].SampleSet);
+
+        Assert.Equal(HitSoundType.SliderWhistle, result[1].Type);
+        Assert.Equal(SampleSetType.Drum, result[1].SampleSet);
+
+        Assert.Equal(3, result[0].SampleIndex);
+        Assert.Equal(3, result[1].SampleIndex);
+
+        Assert.Equal(80, result[0].Volume);
+        Assert.Equal(80, result[1].Volume);
+    }
+
+    [Fact]
+    public void GetSliderBodyHitSoundLayers_WithFinishAndClap_DoesNotCreateContinuousFinishOrClapLayers()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            SampleSet = 1,
+            SampleIndex = 2,
+            Volume = 60,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500,
+            HitSound = 12,
+            HitSample = new HitSample()
+        };
+
+        // Act
+        List<HitSoundLayer> result =
+            beatmap.GetSliderBodyHitSoundLayers(slider);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal(HitSoundType.SliderSlide, result[0].Type);
+    }
 }

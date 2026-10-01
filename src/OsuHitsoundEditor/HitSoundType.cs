@@ -6,5 +6,7 @@ public enum HitSoundType
     Whistle,
     Finish,
     Clap,
-    Custom
+    Custom,
+    SliderSlide,
+    SliderWhistle
 }
