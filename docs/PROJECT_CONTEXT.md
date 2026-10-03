@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT
 
-Last updated: 2026-10-02
+Last updated: 2026-10-03
 
 ## Project
 
@@ -14,7 +14,9 @@ The project is developed incrementally. Core osu! behavior is implemented and ve
 
 ## Current stage
 
-**Public Repository Readiness — COMPLETE**
+**Physical Sample Resolution — READY TO START**
+
+The repository-publication checkpoint is complete.
 
 The previous functional stage, **Hitsound Resolution**, is complete.
 
@@ -24,31 +26,33 @@ Current test status:
 100/100 passing
 ```
 
-The pre-publication review is complete.
-
-The next functional stage is:
+Repository status:
 
 ```text
-Physical Sample Resolution
+Public
+https://github.com/FAJIFBEFJHA/osu-hitsound-editor
 ```
 
-Do not begin new functional work until the current publication checkpoint has been committed, pushed, synchronized to the Drive mirror, and the first GitHub Actions test run has been verified.
+GitHub Actions status:
+
+```text
+Tests workflow run #1
+completed successfully
+```
+
+No functional work has started in **Physical Sample Resolution** yet.
 
 ---
 
 ## Current objective
 
-Close the completed public-repository readiness checkpoint.
+Begin **Physical Sample Resolution** in the next development session.
 
-Immediate operational steps:
+The first functional objective is to define and test the smallest deterministic behavior required to preserve osu! sample lookup semantics.
 
-- commit the reviewed source, tests, documentation, `CONTRIBUTING.md`, `LICENSE`, and GitHub Actions workflow
-- push `main`
-- verify the first GitHub Actions `Tests` workflow run
-- synchronize the continuity documents to the read-only Drive mirror
-- make the repository public after the pushed checkpoint and CI result are verified
+Start with standard hitsound lookup behavior before introducing file-system resolution, `SampleId`, audio metadata, or optimization.
 
-After publication, begin **Physical Sample Resolution**.
+At session close, synchronize the continuity documents to the read-only Drive mirror.
 
 ---
 
@@ -484,6 +488,8 @@ Do not reintroduce the old name.
 
 ## Publication-readiness checkpoint
 
+Repository publication completed.
+
 Pre-publication review completed:
 
 - `.gitignore` reviewed
@@ -507,16 +513,17 @@ Pre-publication review completed:
 - final local regression completed: `100/100 passing`
 - `git diff --check` clean except for expected LF -> CRLF warnings on Windows
 - final repository status and diff review completed
+- publication checkpoint committed and pushed to `main`
+- first GitHub Actions `Tests` workflow run verified successfully
+- repository visibility changed to public
 
-Operational publication steps still required:
+Public repository:
 
 ```text
-commit
-push
-verify first GitHub Actions Tests run
-sync project-context documents to Drive mirror
-make repository public
+https://github.com/FAJIFBEFJHA/osu-hitsound-editor
 ```
+
+The read-only Drive mirror should be refreshed at session close after the final context update is committed and pushed.
 
 The repository-publication milestone is separate from the later osu!tools submission milestone.
 
@@ -599,7 +606,7 @@ Sample Optimization is not currently considered a mandatory requirement for the 
 
 ## Next task
 
-After the publication checkpoint has been pushed and GitHub Actions has been verified, begin **Physical Sample Resolution** by defining and testing the smallest deterministic behavior required to preserve osu! sample lookup semantics.
+Begin **Physical Sample Resolution** by defining and testing the smallest deterministic behavior required to preserve osu! sample lookup semantics.
 
 Start with standard hitsound lookup behavior before introducing file-system resolution, `SampleId`, audio metadata, or optimization.
 
