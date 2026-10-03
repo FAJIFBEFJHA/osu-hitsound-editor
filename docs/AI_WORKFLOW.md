@@ -326,3 +326,13 @@ exact next task
 ```
 
 This prevents `AI_WORKFLOW.md` from becoming stale whenever development advances.
+
+## Markdown copy-paste formatting
+
+When providing Markdown intended to be copied directly into a project file:
+
+- Never wrap Markdown containing fenced code blocks inside another triple-backtick fence.
+- If the content contains triple-backtick fences, wrap the complete copyable block with four backticks.
+- For large Markdown updates or complete document replacements, prefer generating a `.md` file instead of reproducing the document in chat.
+- Preserve the Markdown exactly as it should appear in the destination file.
+- Do not escape Markdown syntax with backslashes when the user intends to copy it into a project file.
