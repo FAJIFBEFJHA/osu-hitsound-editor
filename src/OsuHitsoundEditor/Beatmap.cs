@@ -1,9 +1,8 @@
-using System.Runtime.Intrinsics.Arm;
-
 namespace OsuHitsoundEditor;
 
 public class Beatmap
 {
+    public int BeatmapVersion { get; set; }
     // GENERAL
     public string AudioFilename { get; set; } = string.Empty;
     public int AudioLeadIn { get; set; }
@@ -103,6 +102,11 @@ public class Beatmap
     public double GetSliderSpanDuration(HitObject slider)
     {
         TimingPoint? sliderTiming = GetActiveUninheritedTimingPoint(slider.Time);
+        if (SliderMultiplier <= 0)
+        {
+            throw new InvalidOperationException(
+                "It is not possible to calculate slider span duration because SliderMultiplier must be greater than zero.");
+        }
         if (sliderTiming == null)
         {
             throw new InvalidOperationException("It is not possible to calculate the slider span duration without an active uninherited timing point.");
@@ -129,6 +133,68 @@ public class Beatmap
             throw new ArgumentOutOfRangeException(nameof(edgeIndex), edgeIndex, $"The slider edge index must be between 0 and {slider.Slides}.");
         }
         return slider.Time + GetSliderSpanDuration(slider) * edgeIndex;
+    }
+    public double GetSliderTickDistance(HitObject slider)
+    {
+        if (SliderTickRate <= 0)
+        {
+            throw new InvalidOperationException("It is not possible to calculate slider tick distance because SliderTickRate must be greater than zero.");
+        }
+        if (SliderMultiplier <= 0)
+        {
+            throw new InvalidOperationException("It is not possible to calculate slider tick distance because SliderMultiplier must be greater than zero.");
+        }
+        double baseTickDistance = SliderMultiplier * 100 / SliderTickRate;
+        if (BeatmapVersion < 8)
+        {
+            return baseTickDistance;
+        }
+        double sliderVelocity = GetEffectiveSliderVelocityMultiplier(slider.Time);
+        return baseTickDistance * sliderVelocity;
+    }
+    public List<double> GetSliderTickTimes(HitObject slider)
+    {
+        if (slider.Slides <= 0)
+        {
+            throw new InvalidOperationException("It is not possible to calculate slider tick times because the slider must have at least one span.");
+        }
+        double spanDuration = GetSliderSpanDuration(slider);
+        double tickDistance = GetSliderTickDistance(slider);
+        double sliderVelocity = slider.Length / spanDuration;
+        double minDistanceFromEnd = sliderVelocity * 10;
+        List<double> tickTimes = new List<double>();
+        for (int span = 0; span < slider.Slides; span++)
+        {
+            double spanStartTime = slider.Time + spanDuration * span;
+            bool reversed = span % 2 != 0;
+            List<double> spanTickTimes = new List<double>();
+            for (double distance = tickDistance; distance <= slider.Length; distance = distance + tickDistance)
+            {
+
+                if (distance >= slider.Length - minDistanceFromEnd)
+                {
+                    break;
+                }
+                double pathProgress = distance / slider.Length;
+                double timeProgress;
+                if (reversed)
+                {
+                    timeProgress = 1 - pathProgress;
+                }
+                else
+                {
+                    timeProgress = pathProgress;
+                }
+                double tickTime = spanStartTime + timeProgress * spanDuration;
+                spanTickTimes.Add(tickTime);
+            }
+            if (reversed)
+            {
+                spanTickTimes.Reverse();
+            }
+            tickTimes.AddRange(spanTickTimes);
+        }
+        return tickTimes;
     }
     // SAMPLE SETS
     public SampleSetType GetSampleSetType(int sampleSet)
@@ -391,6 +457,20 @@ public class Beatmap
             sliderWhistle.Volume = volume;
             hitSoundLayers.Add(sliderWhistle);
         }
+        return hitSoundLayers;
+    }
+    public List<HitSoundLayer> GetSliderTickHitSoundLayers(HitObject slider)
+    {
+        int sampleIndex = GetEffectiveSampleIndex(slider);
+        int volume = GetEffectiveVolume(slider);
+        SampleSetType normalSet = GetEffectiveNormalSetType(slider);
+        List<HitSoundLayer> hitSoundLayers = new List<HitSoundLayer>();
+        HitSoundLayer sliderTick = new HitSoundLayer();
+        sliderTick.Type = HitSoundType.SliderTick;
+        sliderTick.SampleSet = normalSet;
+        sliderTick.SampleIndex = sampleIndex;
+        sliderTick.Volume = volume;
+        hitSoundLayers.Add(sliderTick);
         return hitSoundLayers;
     }
 }

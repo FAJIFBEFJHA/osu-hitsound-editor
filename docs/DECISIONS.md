@@ -44,13 +44,14 @@ AI may:
 
 ## D004 — Optimization objective is hierarchical
 
-**Decision:** The intended optimization priority is:
+**Decision:** Optimization must preserve logical and sonic equivalence.
+
+Among valid equivalent representations, the intended optimization priority is:
 
 1. Minimize redundant physical sample files.
-2. Then minimize effective sample-set/index combinations.
-3. Preserve expected sonic behavior.
+2. Among equally minimal solutions, minimize effective `(SampleSet, SampleIndex)` combinations.
 
-**Reason:** File duplication is the primary problem the optimizer is intended to solve.
+**Reason:** Correct behavior is a hard constraint, not something that may be traded away for a smaller representation. File duplication is the primary optimization target.
 
 ---
 
@@ -125,11 +126,11 @@ Revisit only if Visual Studio provides a material development advantage.
 
 ---
 
-## D011 — Slider edge times use double precision
+## D011 — Slider timing uses double precision where required
 
-**Decision:** Methods that query arbitrary timing instants use `double time` where slider edge timing can be fractional.
+**Decision:** Methods that query arbitrary timing instants use `double time` where slider edge or tick timing can be fractional.
 
-**Reason:** Slider repeat/tail times may not be integer milliseconds.
+**Reason:** Slider repeat, tail, and tick times may not be integer milliseconds.
 
 ---
 
@@ -143,11 +144,11 @@ Example:
 
 ---
 
-## D013 — Public repository starts at Phase 3
+## D013 — Public repository starts before Physical Sample Resolution
 
-**Decision:** Make the repository public at the beginning of Phase 3 after a readiness review.
+**Decision:** Make the repository public after **Hitsound Resolution** is complete and the publication-readiness review passes, before beginning **Physical Sample Resolution**.
 
-**Reason:** Phase 2 establishes a coherent parser/resolution foundation suitable for public development.
+**Reason:** Hitsound Resolution establishes a coherent parser and logical-resolution foundation suitable for public development.
 
 ---
 
@@ -167,3 +168,30 @@ Keep an honest disclosure that AI was used as a mentor/learning assistant.
 2. official open-source osu! implementation when necessary
 
 Do not guess format behavior.
+
+---
+
+## D016 — Slider audio responsibilities remain separate until a concrete consumer requires aggregation
+
+**Decision:** Keep slider edge hitsounds, continuous slider body hitsounds, and slider tick hitsounds as separate resolution responsibilities for now.
+
+Do not introduce a combined API such as `GetAllSliderHitSounds()` until a concrete consumer, such as the timeline, requires a unified event representation with appropriate timing information.
+
+**Reason:** These slider sounds have different timing and behavior. Introducing a combined abstraction before its required data shape is known would be premature.
+
+---
+
+## D017 — Physical sample resolution preserves osu! lookup semantics
+
+**Decision:** Physical sample resolution must preserve osu!'s lookup semantics instead of resolving a sample from its generated filename alone.
+
+`SampleIndex = 0` and `SampleIndex = 1` may correspond to the same base filename, but they do not have the same lookup behavior.
+
+The resolver must preserve whether the beatmap directory participates in the lookup and distinguish between:
+
+- a sample found in the beatmap
+- an external fallback
+- an explicit custom filename that was found
+- an explicit custom filename that is missing
+
+**Reason:** Reducing physical resolution to filename generation would lose information required to reproduce osu!'s actual sample lookup behavior.

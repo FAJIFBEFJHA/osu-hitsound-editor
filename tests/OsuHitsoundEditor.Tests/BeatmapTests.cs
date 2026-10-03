@@ -1460,4 +1460,419 @@ public class BeatmapTests
         Assert.Single(result);
         Assert.Equal(HitSoundType.SliderSlide, result[0].Type);
     }
+    [Fact]
+    public void GetSliderTickDistance_Version14WithoutInheritedTimingPoint_ReturnsBaseDistance()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            BeatmapVersion = 14,
+            SliderMultiplier = 1.4,
+            SliderTickRate = 1
+        };
+
+        HitObject slider = new HitObject
+        {
+            Time = 1000
+        };
+
+        // Act
+        double result = beatmap.GetSliderTickDistance(slider);
+
+        // Assert
+        Assert.Equal(140, result);
+    }
+
+    [Fact]
+    public void GetSliderTickDistance_Version14WithDoubleSliderVelocity_AppliesSliderVelocity()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            BeatmapVersion = 14,
+            SliderMultiplier = 1.4,
+            SliderTickRate = 1
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = -50,
+            IsUninherited = false
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500
+        };
+
+        // Act
+        double result = beatmap.GetSliderTickDistance(slider);
+
+        // Assert
+        Assert.Equal(280, result);
+    }
+
+    [Fact]
+    public void GetSliderTickDistance_Version7WithDoubleSliderVelocity_IgnoresSliderVelocity()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            BeatmapVersion = 7,
+            SliderMultiplier = 1.4,
+            SliderTickRate = 1
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = -50,
+            IsUninherited = false
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500
+        };
+
+        // Act
+        double result = beatmap.GetSliderTickDistance(slider);
+
+        // Assert
+        Assert.Equal(140, result);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void GetSliderTickDistance_InvalidSliderTickRate_Throws(double sliderTickRate)
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            BeatmapVersion = 14,
+            SliderMultiplier = 1.4,
+            SliderTickRate = sliderTickRate
+        };
+
+        HitObject slider = new HitObject
+        {
+            Time = 1000
+        };
+
+        // Act
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => beatmap.GetSliderTickDistance(slider));
+
+        // Assert
+        Assert.Equal(
+            "It is not possible to calculate slider tick distance because SliderTickRate must be greater than zero.",
+            exception.Message);
+    }
+    [Fact]
+    public void GetSliderTickTimes_OneSpan_ReturnsTickTimes()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            BeatmapVersion = 14,
+            SliderMultiplier = 1,
+            SliderTickRate = 1
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 0,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1000,
+            Length = 300,
+            Slides = 1
+        };
+
+        // Act
+        List<double> result = beatmap.GetSliderTickTimes(slider);
+
+        // Assert
+        Assert.Equal(2, result.Count);
+        Assert.Equal(1500, result[0]);
+        Assert.Equal(2000, result[1]);
+    }
+
+    [Fact]
+    public void GetSliderTickTimes_TwoSpans_ReturnsTicksInChronologicalOrder()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            BeatmapVersion = 14,
+            SliderMultiplier = 1,
+            SliderTickRate = 1
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 0,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1000,
+            Length = 300,
+            Slides = 2
+        };
+
+        // Act
+        List<double> result = beatmap.GetSliderTickTimes(slider);
+
+        // Assert
+        Assert.Equal(4, result.Count);
+
+        Assert.Equal(1500, result[0]);
+        Assert.Equal(2000, result[1]);
+        Assert.Equal(3000, result[2]);
+        Assert.Equal(3500, result[3]);
+    }
+
+    [Fact]
+    public void GetSliderTickTimes_TickAtEnd_IsNotGenerated()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            BeatmapVersion = 14,
+            SliderMultiplier = 1,
+            SliderTickRate = 1
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 0,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1000,
+            Length = 100,
+            Slides = 1
+        };
+
+        // Act
+        List<double> result = beatmap.GetSliderTickTimes(slider);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetSliderTickTimes_InvalidSlides_Throws()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        HitObject slider = new HitObject
+        {
+            Slides = 0
+        };
+
+        // Act
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => beatmap.GetSliderTickTimes(slider));
+
+        // Assert
+        Assert.Equal(
+            "It is not possible to calculate slider tick times because the slider must have at least one span.",
+            exception.Message);
+    }
+    [Fact]
+    public void GetSliderTickHitSoundLayers_ExplicitValues_ReturnsSingleSliderTickLayer()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        HitObject slider = new HitObject
+        {
+            Time = 1000,
+            HitSample = new HitSample
+            {
+                NormalSet = 2,
+                Index = 3,
+                Volume = 70
+            }
+        };
+
+        // Act
+        List<HitSoundLayer> result = beatmap.GetSliderTickHitSoundLayers(slider);
+
+        // Assert
+        HitSoundLayer layer = Assert.Single(result);
+
+        Assert.Equal(HitSoundType.SliderTick, layer.Type);
+        Assert.Equal(SampleSetType.Soft, layer.SampleSet);
+        Assert.Equal(3, layer.SampleIndex);
+        Assert.Equal(70, layer.Volume);
+    }
+
+    [Fact]
+    public void GetSliderTickHitSoundLayers_InheritedValues_UsesTimingPointValues()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 0,
+            BeatLength = 500,
+            IsUninherited = true,
+            SampleSet = 3,
+            SampleIndex = 4,
+            Volume = 65
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1000,
+            HitSample = new HitSample()
+        };
+
+        // Act
+        List<HitSoundLayer> result = beatmap.GetSliderTickHitSoundLayers(slider);
+
+        // Assert
+        HitSoundLayer layer = Assert.Single(result);
+
+        Assert.Equal(HitSoundType.SliderTick, layer.Type);
+        Assert.Equal(SampleSetType.Drum, layer.SampleSet);
+        Assert.Equal(4, layer.SampleIndex);
+        Assert.Equal(65, layer.Volume);
+    }
+
+    [Fact]
+    public void GetSliderTickHitSoundLayers_DifferentAdditionSet_UsesNormalSet()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        HitObject slider = new HitObject
+        {
+            Time = 1000,
+            HitSample = new HitSample
+            {
+                NormalSet = 2,
+                AdditionSet = 3,
+                Index = 2,
+                Volume = 80
+            }
+        };
+
+        // Act
+        List<HitSoundLayer> result = beatmap.GetSliderTickHitSoundLayers(slider);
+
+        // Assert
+        HitSoundLayer layer = Assert.Single(result);
+
+        Assert.Equal(HitSoundType.SliderTick, layer.Type);
+        Assert.Equal(SampleSetType.Soft, layer.SampleSet);
+        Assert.Equal(2, layer.SampleIndex);
+        Assert.Equal(80, layer.Volume);
+    }
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void GetSliderSpanDuration_InvalidSliderMultiplier_Throws(double sliderMultiplier)
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            SliderMultiplier = sliderMultiplier
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 0,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1000,
+            Length = 100
+        };
+
+        // Act
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => beatmap.GetSliderSpanDuration(slider));
+
+        // Assert
+        Assert.Equal(
+            "It is not possible to calculate slider span duration because SliderMultiplier must be greater than zero.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void GetSliderTickDistance_InvalidSliderMultiplier_Throws(double sliderMultiplier)
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            BeatmapVersion = 14,
+            SliderMultiplier = sliderMultiplier,
+            SliderTickRate = 1
+        };
+
+        HitObject slider = new HitObject
+        {
+            Time = 1000
+        };
+
+        // Act
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => beatmap.GetSliderTickDistance(slider));
+
+        // Assert
+        Assert.Equal(
+            "It is not possible to calculate slider tick distance because SliderMultiplier must be greater than zero.",
+            exception.Message);
+    }
+    [Fact]
+    public void GetSliderTickDistance_Version8WithDoubleSliderVelocity_AppliesSliderVelocity()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap
+        {
+            BeatmapVersion = 8,
+            SliderMultiplier = 1.4,
+            SliderTickRate = 1
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1000,
+            BeatLength = -50,
+            IsUninherited = false
+        });
+
+        HitObject slider = new HitObject
+        {
+            Time = 1500
+        };
+
+        // Act
+        double result = beatmap.GetSliderTickDistance(slider);
+
+        // Assert
+        Assert.Equal(280, result);
+    }
 }

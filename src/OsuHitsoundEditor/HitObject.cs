@@ -34,7 +34,7 @@ public class HitObject
             }
         }
     }
-    public bool StarstNewCombo
+    public bool StartsNewCombo
     {
         get
         {

@@ -6,6 +6,9 @@
 # dotenv files
 .env
 
+# Local project-context synchronization
+/scripts/Sync-ProjectContext.ps1
+
 # User-specific files
 *.rsuser
 *.suo

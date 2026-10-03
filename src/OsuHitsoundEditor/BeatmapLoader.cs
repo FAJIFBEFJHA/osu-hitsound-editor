@@ -11,6 +11,12 @@ public class BeatmapLoader
 
         foreach (string line in lines)
         {
+            if (line.StartsWith("osu file format v"))
+            {
+                string[] versionParts = line.Split('v', 2);
+                beatmap.BeatmapVersion = int.Parse(versionParts[1]);
+                continue;
+            }
             if (line.StartsWith("[") && line.EndsWith("]"))
             {
                 currentSection = line.Trim('[', ']');
@@ -24,7 +30,7 @@ public class BeatmapLoader
                     break;
                 case "Editor":
                     ParseEditorLine(beatmap, line);
-                    break;    
+                    break;
                 case "Metadata":
                     ParseMetadataLine(beatmap, line);
                     break;

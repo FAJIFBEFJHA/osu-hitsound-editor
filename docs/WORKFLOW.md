@@ -43,12 +43,25 @@ Define it using:
 
 ```text
 SECCIÓN:
+    Full method name/signature, then its existing section in the class/file.
+
 PERTENECE A:
+    Class that owns the method.
+
 RECIBE:
+    Parameters and their purpose.
+
 DEVUELVE:
+    Return type and meaning.
+
 UTILIZA:
+    Existing properties, methods, classes, or data used.
+
 FLUJO:
+    Short pseudocode directly translatable to code.
 ```
+
+Always include the full method name/signature under `SECCIÓN:` before the section location.
 
 `FLUJO` must be short and directly translatable to code.
 
@@ -191,7 +204,7 @@ Prefer functional progress over premature abstraction.
 
 ## Before ending a session
 
-Run:
+First verify the working state:
 
 ```powershell
 dotnet test
@@ -199,7 +212,37 @@ git status
 git diff
 ```
 
-If the current functional checkpoint is complete:
+Then update `docs/PROJECT_CONTEXT.md` so it records the checkpoint that is actually about to be committed:
+
+```text
+CURRENT STAGE
+TEST STATUS
+COMPLETED
+CURRENT STATE
+NEXT TASK
+IMPORTANT / TECHNICAL DEBT
+```
+
+Use descriptive roadmap stage names such as:
+
+```text
+Hitsound Resolution
+Physical Sample Resolution
+Export and Round-Trip Verification
+```
+
+Do not use `Phase N` numbering for roadmap stages.
+
+`PROJECT_CONTEXT.md` is a checkpoint, not a diary. Keep it current and focused on information needed to resume development.
+
+Review the final changes again:
+
+```powershell
+git status
+git diff
+```
+
+If the current functional or documentation checkpoint is complete:
 
 ```powershell
 git add ...
@@ -207,17 +250,7 @@ git commit -m "..."
 git push
 ```
 
-Then update `docs/PROJECT_CONTEXT.md`:
-
-```text
-TEST STATUS
-COMPLETED
-CURRENT STATE
-NEXT STEP
-IMPORTANT / TECHNICAL DEBT
-```
-
-`PROJECT_CONTEXT.md` is a checkpoint, not a diary. Keep it concise and current.
+If a local continuity mirror is used, synchronize it only after the repository changes have been committed and pushed.
 
 ---
 

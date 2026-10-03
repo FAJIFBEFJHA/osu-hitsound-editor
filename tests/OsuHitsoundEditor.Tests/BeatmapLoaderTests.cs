@@ -221,4 +221,16 @@ public class BeatmapLoaderTests
         Assert.Equal(1.4, beatmap.SliderMultiplier);
         Assert.Equal(1, beatmap.SliderTickRate);
     }
+    [Fact]
+    public void Load_BeatmapVersion_ParsesFileFormatVersion()
+    {
+        // Arrange
+        BeatmapLoader loader = new BeatmapLoader();
+
+        // Act
+        Beatmap beatmap = loader.Load("TestData/basic-beatmap.osu");
+
+        // Assert
+        Assert.Equal(14, beatmap.BeatmapVersion);
+    }
 }

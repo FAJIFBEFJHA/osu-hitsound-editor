@@ -25,7 +25,7 @@ When introducing a new method, always use exactly this structure:
 
 ```text
 SECCIÓN:
-    Where the method belongs in the current class/file.
+    Full method name/signature first, then where the method belongs in the current class/file.
 
 PERTENECE A:
     Class that owns the method.
@@ -78,6 +78,7 @@ FLUJO:
 
 Rules:
 
+- Under `SECCIÓN:`, always include the full method name/signature before the section location.
 - Keep `FLUJO` concise and directly translatable to code.
 - Do NOT expand it into a long numbered walkthrough unless the user asks.
 - Do NOT first ask the user to implement only the method signature.
@@ -190,6 +191,7 @@ Suggest/prepare a commit when:
 - For uncertain osu! format behavior, verify official osu! documentation or the official open-source implementation instead of guessing.
 - Keep logical sample identity separate from physical `.osu` `SampleSet` / `SampleIndex` / filename representation.
 - Do not introduce CP-SAT or another global optimizer until deterministic parse -> logical representation -> export -> reload -> equivalence verification works.
+- Refer to roadmap stages by descriptive names such as `Hitsound Resolution` or `Physical Sample Resolution`, not by `Phase N` numbering.
 
 ## Continuity
 
@@ -202,13 +204,125 @@ Treat:
 
 If chat context conflicts with those sources, point out the discrepancy instead of guessing.
 
+### Google Drive synchronization
+
+The repository is the single source of truth for continuity documents.
+
+Rules:
+
+- Edit continuity documents only in `docs/` inside the local repository.
+- Google Drive is a read-only mirror for AI continuity.
+- The AI must not modify the Google Drive copies directly.
+- After committing and pushing documentation changes, synchronize the local
+  documents to Google Drive.
+- At the start of a session, prefer the current live Google Drive files over
+  stale Project snapshots when Drive access is available.
+- If the local repository and Google Drive disagree, the local repository wins.
+- Never merge divergent local and Drive continuity files automatically.
+
+## Session starting protocol
+
+When the user starts or resumes a development session:
+
+1. Read `docs/PROJECT_CONTEXT.md`.
+
+2. Read the relevant part of `docs/ROADMAP.md`.
+
+3. Read `docs/DECISIONS.md` if the next task involves architecture or design.
+
+4. Confirm:
+   - current stage
+   - expected test count
+   - last completed functionality
+   - exact next task
+
+5. Ask the user to run, or verify the results of:
+
+   ```powershell
+   git pull
+   git status
+   dotnet test
+   ```
+
+6. Compare the actual test result with the count recorded in `PROJECT_CONTEXT.md`.
+
+7. If the counts differ:
+   - do not guess why
+   - inspect the current source and tests before continuing
+   - treat the actual code and tests as the source of truth
+   - update `PROJECT_CONTEXT.md` after the discrepancy is understood
+
+8. Restate the next task in one short sentence.
+
+9. If a new method is required, always use:
+
+   ```text
+   SECCIÓN:
+       Where the method belongs.
+
+   PERTENECE A:
+       Class that owns the method.
+
+   RECIBE:
+       Parameters and their purpose.
+
+   DEVUELVE:
+       Return type and meaning.
+
+   UTILIZA:
+       Existing methods, properties, classes, or data used.
+
+   FLUJO:
+       Short pseudocode directly translatable to code.
+   ```
+
+10. Keep `FLUJO` concise. Example:
+
+    ```text
+    FLUJO:
+        si Slides <= 0
+            InvalidOperationException
+
+        si edgeIndex < 0 o edgeIndex > Slides
+            ArgumentOutOfRangeException
+
+        calcular:
+            slider.Time
+            + GetSliderSpanDuration(slider) * edgeIndex
+
+        devolver el resultado
+    ```
+
+11. Do not ask the user to implement only the method signature first. Explain the complete responsibility and ask the user to implement the complete method.
+
+12. Do not start unrelated refactors or technical-debt work unless it blocks the current task.
+
+13. Do not begin implementation until the existing test suite is passing or the reason for an existing failure is understood.
+
+## Session closing protocol
+
+When the user says they are stopping, pausing, going to sleep,
+or ending the session:
+
+1. State the current stage and exact passing test count.
+2. Summarize only the functionality completed in this session.
+3. Identify which documentation files must be updated.
+4. State any unresolved question or technical debt discovered.
+5. Give exactly one concrete next task.
+6. Provide the appropriate Git commit message and push commands.
+7. Do not start a new feature.
+
 ## Current checkpoint
 
-At the time this file was created:
+Do not store a hard-coded stage or test count in this file.
+
+Always read `docs/PROJECT_CONTEXT.md` for:
 
 ```text
-Phase: 2 — Real hitsound resolution
-Tests: 79/79 passing
+current stage
+current passing test count
+last completed functionality
+exact next task
 ```
 
-Read `docs/PROJECT_CONTEXT.md` for the current checkpoint because this number will become stale.
+This prevents `AI_WORKFLOW.md` from becoming stale whenever development advances.

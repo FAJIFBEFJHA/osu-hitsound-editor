@@ -8,32 +8,34 @@ The roadmap should remain incremental. Avoid large architectural jumps before th
 
 ---
 
-## Phase 1 — Parser and base model
+## Beatmap Parsing and Base Model
 
 **Status: COMPLETE**
 
 Implemented foundations include:
 
-- `.osu` section parsing
-- General metadata
-- Editor settings
-- Difficulty settings
-- Timing points
-- Hit objects
-- Hit samples
-- sliders
-- slider edges
-- spinners
-- hitsound flags
-- base test suite
+- [x] `.osu` section parsing
+- [x] File format version parsing
+- [x] General settings
+- [x] Editor settings
+- [x] Metadata
+- [x] Difficulty settings
+- [x] Timing points
+- [x] Hit objects
+- [x] Hit samples
+- [x] Sliders
+- [x] Slider edges
+- [x] Spinners
+- [x] Hitsound flags
+- [x] Base automated test suite
 
 ---
 
-## Phase 2 — Real hitsound resolution
+## Hitsound Resolution
 
-**Status: IN PROGRESS**
+**Status: COMPLETE**
 
-Current checkpoint: **79/79 tests passing**
+Current checkpoint: **100/100 tests passing**
 
 Completed:
 
@@ -48,56 +50,74 @@ Completed:
 - [x] Resolve volume
 - [x] Resolve hitsound types
 - [x] Build logical `HitSoundLayer` values
-- [x] Resolve slider edge hitsounds
 - [x] Calculate slider span duration
 - [x] Calculate total slider duration
 - [x] Calculate real slider edge times
+- [x] Resolve slider edge hitsounds
 - [x] Resolve slider edge samples using timing at the edge's real time
 - [x] Resolve continuous slider body `SliderSlide`
 - [x] Resolve continuous slider body `SliderWhistle`
+- [x] Parse and use `BeatmapVersion`
+- [x] Resolve slider tick distance
+- [x] Preserve pre-v8 / v8+ slider tick behavior
+- [x] Calculate slider tick times across normal and reversed spans
+- [x] Resolve `SliderTick` hitsound layers
+- [x] Validate relevant invalid slider states
+- [x] Add boundary and regression coverage
+- [x] Run full hitsound-resolution regression suite
 
-Remaining / review:
+### API decision
 
-- [ ] Determine the clean API for resolving all slider edge hitsounds
-- [ ] Verify remaining slider-specific audio behavior needed by the editor
-- [ ] Review slider ticks / continuous slider audio requirements before deciding whether they belong in Phase 2 or a later phase
-- [ ] Add missing edge cases discovered during final Phase 2 review
-- [ ] Run full Phase 2 regression suite
-- [ ] Complete publication-readiness review
-- [ ] Review slider tick behavior
+A combined `GetAllSliderHitSounds()`-style API is intentionally deferred.
+
+The current slider responsibilities remain separate because head/repeat/tail events, continuous body sounds, and ticks have different timing and behavior. A combined event API should only be introduced when the timeline or another concrete consumer requires it.
+
 ---
 
-## Public repository milestone
+## Public Repository Milestone
 
-**Target: beginning of Phase 3**
+**Target: before starting Physical Sample Resolution**
 
-Before making the repository public:
+Completed:
 
-- [ ] All tests pass
-- [ ] Remove personal/local-only paths
-- [ ] Remove secrets
-- [ ] Remove copyrighted beatmaps/audio that should not be redistributed
-- [ ] Verify `.gitignore`
-- [ ] Fix known naming/typo issues
-- [ ] Review README in the author's own voice
-- [ ] Keep the honest AI-mentorship disclosure
-- [ ] Add license
-- [ ] Review `docs/architecture.md`
+- [x] All tests pass
+- [x] Verify `.gitignore`
+- [x] Verify no tracked local Windows paths
+- [x] Check tracked files for obvious secrets or credentials
+- [x] Verify test data does not include redistributable copyrighted beatmap/audio content
+- [x] Fix known naming/typo issues
+- [x] Review README in the author's own voice
+- [x] Keep the honest AI-mentorship disclosure
+- [x] Add `CONTRIBUTING.md`
+- [x] Add MIT `LICENSE`
+- [x] Review `docs/architecture.md`
+- [x] Review this roadmap
+
+Remaining:
+
 - [ ] Review `docs/DECISIONS.md`
 - [ ] Review `docs/PROJECT_CONTEXT.md`
+- [ ] Review `docs/AI_WORKFLOW.md` and `docs/WORKFLOW.md` for stale numbered-stage references
+- [ ] Replace remaining `Phase N` terminology in project documentation where it refers to roadmap stages
+- [ ] Run final `dotnet test`
+- [ ] Review final `git status` and `git diff`
+- [ ] Sync the final local project-context documents to the read-only Drive mirror
+- [ ] Make the publication commit and push when the documentation review is complete
 
 ---
 
-## Phase 3 — Physical sample files and sample resolution
+## Physical Sample Resolution
 
 **Status: NOT STARTED**
+
+This is the next functional development stage after the public-repository milestone is complete.
 
 Planned:
 
 - [ ] Discover sample files used by the beatmap
 - [ ] Resolve osu! sample filenames
 - [ ] Separate logical sample identity from physical `.osu` representation
-- [ ] Define stable logical `SampleId`
+- [ ] Define a stable logical `SampleId`
 - [ ] Load sample metadata required by the editor
 - [ ] Handle missing samples predictably
 - [ ] Add sample-resolution tests
@@ -106,11 +126,11 @@ Do not introduce global optimization yet.
 
 ---
 
-## Phase 4 — Audio infrastructure
+## Audio Infrastructure
 
 **Status: NOT STARTED**
 
-Prefer an independently evaluated open-source .NET audio library for infrastructure rather than implementing low-level playback/decoding ourselves.
+Prefer an independently evaluated open-source .NET audio library for infrastructure rather than implementing low-level playback or decoding ourselves.
 
 Planned:
 
@@ -120,11 +140,11 @@ Planned:
 - [ ] Seek
 - [ ] Play hitsound layers together
 - [ ] Synchronize playback position with editor timeline
-- [ ] Handle audio device errors
+- [ ] Handle audio-device errors
 
 ---
 
-## Phase 5 — Desktop UI and timeline
+## Desktop Editor and Timeline
 
 **Status: NOT STARTED**
 
@@ -137,22 +157,22 @@ Planned:
 - [ ] Timeline
 - [ ] Playhead
 - [ ] Zoom
-- [ ] waveform
-- [ ] hitsound events/tracks
-- [ ] selection
-- [ ] editing
-- [ ] snapping
-- [ ] reusable patterns if still beneficial after core editing works
+- [ ] Waveform
+- [ ] Hitsound events/tracks
+- [ ] Selection
+- [ ] Editing
+- [ ] Snapping
+- [ ] Reusable patterns if still beneficial after core editing works
 
 External libraries may be used for generic UI/audio infrastructure after evaluation.
 
 ---
 
-## Phase 6 — Exporter and round-trip verification
+## Export and Round-Trip Verification
 
 **Status: NOT STARTED**
 
-This phase must work deterministically before global optimization.
+This stage must work deterministically before global optimization.
 
 Planned:
 
@@ -176,7 +196,28 @@ parse
 
 ---
 
-## Phase 7 — Sample optimization
+## osu!tools Submission Milestone
+
+**Target: after Export and Round-Trip Verification**
+
+At this point, evaluate whether the project is ready to be submitted to the osu!tools directory.
+
+Before submission:
+
+- [ ] The editor provides a complete useful workflow for another user.
+- [ ] A beatmap can be opened, edited, and exported.
+- [ ] Hitsounds can be previewed reliably.
+- [ ] Exported beatmaps pass round-trip logical equivalence verification.
+- [ ] A downloadable GitHub release is available.
+- [ ] Basic user documentation exists.
+- [ ] Installation and first-use instructions have been tested from a clean environment.
+- [ ] Known important limitations are documented.
+- [ ] Re-check the current osu!tools submission requirements.
+- [ ] Prepare screenshots, description, download link, and repository link as required.
+
+Sample Optimization is not required for the first submission unless later development shows that it is necessary for the editor's core workflow.
+
+## Sample Optimization
 
 **Status: NOT STARTED**
 
@@ -195,18 +236,20 @@ Possible future approach:
 
 Do not assume perceptual similarity means sample equivalence.
 
+Sample equivalence must be based on an explicit rule, such as identical audio content or an equivalence declared by the system or user.
+
 ---
 
-## Phase 8 — Integration and release-quality polish
+## Integration and Release Polish
 
 **Status: NOT STARTED**
 
 Planned:
 
 - [ ] Error handling
-- [ ] performance profiling
-- [ ] larger beatmap testing
-- [ ] usability pass
-- [ ] packaging
-- [ ] documentation
-- [ ] release checklist
+- [ ] Performance profiling
+- [ ] Larger beatmap testing
+- [ ] Usability pass
+- [ ] Packaging
+- [ ] Documentation
+- [ ] Release checklist
