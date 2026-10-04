@@ -193,6 +193,16 @@ Suggest/prepare a commit when:
 - Do not introduce CP-SAT or another global optimizer until deterministic parse -> logical representation -> export -> reload -> equivalence verification works.
 - Refer to roadmap stages by descriptive names such as `Hitsound Resolution` or `Physical Sample Resolution`, not by `Phase N` numbering.
 
+## Markdown output
+
+When Markdown is intended for direct copy-paste into a project file:
+
+- preserve the exact Markdown source formatting
+- if the content itself contains fenced code blocks, use four backticks for the outer fence
+- never nest a triple-backtick Markdown block inside another triple-backtick block
+- prefer generating a `.md` file for large document replacements
+- do not escape Markdown syntax merely to make it display as plain text when the user intends to copy it
+
 ## Continuity
 
 Treat:
@@ -326,13 +336,3 @@ exact next task
 ```
 
 This prevents `AI_WORKFLOW.md` from becoming stale whenever development advances.
-
-## Markdown copy-paste formatting
-
-When providing Markdown intended to be copied directly into a project file:
-
-- Never wrap Markdown containing fenced code blocks inside another triple-backtick fence.
-- If the content contains triple-backtick fences, wrap the complete copyable block with four backticks.
-- For large Markdown updates or complete document replacements, prefer generating a `.md` file instead of reproducing the document in chat.
-- Preserve the Markdown exactly as it should appear in the destination file.
-- Do not escape Markdown syntax with backslashes when the user intends to copy it into a project file.
