@@ -171,27 +171,67 @@ Do not guess format behavior.
 
 ---
 
-## D016 — Slider audio responsibilities remain separate until a concrete consumer requires aggregation
+## D016 — Slider hitsound responsibilities remain separate
 
-**Decision:** Keep slider edge hitsounds, continuous slider body hitsounds, and slider tick hitsounds as separate resolution responsibilities for now.
+**Decision:** Keep slider edge, slider body, and slider tick hitsound resolution as separate responsibilities and APIs for now.
 
-Do not introduce a combined API such as `GetAllSliderHitSounds()` until a concrete consumer, such as the timeline, requires a unified event representation with appropriate timing information.
+Do not add a broad `GetAllSliderHitSounds()` method unless a concrete consumer requires it.
 
-**Reason:** These slider sounds have different timing and behavior. Introducing a combined abstraction before its required data shape is known would be premature.
+**Reason:** Edge, body, and tick sounds have different timing and sample-resolution rules. Combining them early would hide those distinctions without providing a current architectural benefit.
 
 ---
 
 ## D017 — Physical sample resolution preserves osu! lookup semantics
 
-**Decision:** Physical sample resolution must preserve osu!'s lookup semantics instead of resolving a sample from its generated filename alone.
+**Decision:** Physical sample resolution must preserve the semantic distinction between `SampleIndex = 0` and `SampleIndex = 1` and must not represent all missing local files as the same state.
 
-`SampleIndex = 0` and `SampleIndex = 1` may correspond to the same base filename, but they do not have the same lookup behavior.
+The physical outcome model distinguishes:
 
-The resolver must preserve whether the beatmap directory participates in the lookup and distinguish between:
+```text
+BeatmapSampleFound
+ExternalFallbackRequired
+CustomSampleFound
+CustomSampleMissing
+```
 
-- a sample found in the beatmap
-- an external fallback
-- an explicit custom filename that was found
-- an explicit custom filename that is missing
+**Reason:** A standard sample that is absent from the beatmap may legitimately continue to skin/default fallback, while a missing explicitly named custom sample is a different condition. Likewise, index `0` must not accidentally become an index `1` beatmap lookup.
 
-**Reason:** Reducing physical resolution to filename generation would lose information required to reproduce osu!'s actual sample lookup behavior.
+---
+
+## D018 — Physical filesystem lookup belongs to SampleResolver
+
+**Decision:** Keep filesystem/sample-name resolution in `SampleResolver` rather than adding it to `Beatmap`.
+
+`Beatmap` remains responsible for logical/timing resolution. `SampleResolver` translates a resolved `HitSoundLayer` into osu! physical lookup behavior.
+
+**Reason:** Physical resource discovery is now a concrete responsibility boundary. Keeping it separate prevents `Beatmap` from mixing timing/logical semantics with filesystem concerns.
+
+---
+
+## D019 — Explicit custom filename behavior is client-sensitive
+
+**Status:** Superseded by D020 after the compatibility target was deliberately chosen.
+
+**Decision:** Do not change logical custom-filename semantics to match only osu!stable or only osu!lazer until the project explicitly chooses a compatibility target.
+
+Manual testing confirmed a behavioral divergence: stable explicit-filename cases behaved as custom-only in the current comparison, while lazer allowed the explicit custom sample to coexist with applicable addition samples.
+
+Before changing `GetHitSoundLayers(...)`, preserve or recreate a reproducible fixture and record each input case explicitly.
+
+**Reason:** Choosing one behavior implicitly could make parse -> logical representation -> export -> reload equivalence incorrect for the other client. The compatibility target must be deliberate and testable.
+
+---
+
+## D020 — Legacy explicit custom filename semantics are canonical
+
+**Decision:** For legacy `.osu` hit objects with an explicit `hitSample.filename`, the editor's canonical logical audible result is the explicitly named custom sample only.
+
+The parsed source data remains intact: the original `hitSound` flags and `hitSample.filename` are preserved. Suppression of `Whistle`, `Finish`, and `Clap` additions belongs to logical hitsound resolution, not parsing.
+
+The current osu!lazer behavior, where an explicit custom sample can coexist with applicable additions, is treated as client-specific behavior rather than the canonical legacy model.
+
+Do not introduce a stable/lazer compatibility mode unless a concrete consumer later requires client-specific playback or export behavior.
+
+Before changing `GetHitSoundLayers(...)`, preserve or recreate a reproducible explicit-filename fixture and record its input cases explicitly.
+
+**Reason:** The documented legacy format semantics and manual osu!stable testing agree on custom-only playback for explicit filenames, while manual osu!lazer testing confirms a real client divergence. Choosing the legacy/stable semantics gives the project one deterministic logical model for parse -> logical representation -> export -> reload -> equivalence without prematurely introducing client-target abstractions.

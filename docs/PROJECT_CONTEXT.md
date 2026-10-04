@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT
 
-Last updated: 2026-10-03
+Last updated: 2026-10-04
 
 ## Project
 
@@ -8,343 +8,53 @@ Last updated: 2026-10-03
 
 C#/.NET learning project focused on building an osu!standard hitsound editor with a DAW-like workflow.
 
-The project is developed incrementally. Core osu! behavior is implemented and verified before UI, export, and optimization are layered on top.
+Repository:
 
----
+```text
+https://github.com/FAJIFBEFJHA/osu-hitsound-editor
+```
+
+The repository is public.
 
 ## Current stage
 
-**Physical Sample Resolution — READY TO START**
-
-The repository-publication checkpoint is complete.
-
-The previous functional stage, **Hitsound Resolution**, is complete.
+**Physical Sample Resolution**
 
 Current test status:
 
 ```text
-100/100 passing
+168/168 passing
 ```
 
-Repository status:
-
-```text
-Public
-https://github.com/FAJIFBEFJHA/osu-hitsound-editor
-```
-
-GitHub Actions status:
-
-```text
-Tests workflow run #1
-completed successfully
-```
-
-No functional work has started in **Physical Sample Resolution** yet.
-
----
+Hitsound Resolution was completed before starting Physical Sample Resolution.
 
 ## Current objective
 
-Begin **Physical Sample Resolution** in the next development session.
+Preserve or recreate a reproducible explicit-filename compatibility fixture and record each input case before changing logical hitsound generation.
 
-The first functional objective is to define and test the smallest deterministic behavior required to preserve osu! sample lookup semantics.
+The compatibility policy is now decided: legacy `.osu` explicit custom filenames use documented/osu!stable custom-only semantics as the canonical logical behavior. Do not modify `Beatmap.GetHitSoundLayers(...)` until the fixture is recorded and ready to support regression tests.
 
-Start with standard hitsound lookup behavior before introducing file-system resolution, `SampleId`, audio metadata, or optimization.
+## Current implementation checkpoint
 
-At session close, synchronize the continuity documents to the read-only Drive mirror.
+### Logical hitsound resolution
 
----
+The logical layer is already implemented and covered by the previous Hitsound Resolution checkpoint.
 
-## Functional implementation checkpoint
+Relevant behavior includes:
 
-### Beatmap model
-
-`Beatmap` currently includes data from these `.osu` sections:
-
-- `[General]`
-- `[Editor]`
-- `[Metadata]`
-- `[Difficulty]`
-- `[TimingPoints]`
-- `[HitObjects]`
-
-It also stores the parsed osu! file format version through:
-
-```text
-BeatmapVersion
-```
-
-Relevant properties include:
-
-- `BeatmapVersion`
-- `AudioFilename`
-- `AudioLeadIn`
-- `PreviewTime`
-- `Countdown`
-- `DefaultSampleSet`
-- `Mode`
-- `Bookmarks`
-- `DistanceSpacing`
-- `BeatDivisor`
-- `GridSize`
-- `TimelineZoom`
-- `Title`
-- `Artist`
-- `Creator`
-- `Difficulty`
-- `HPDrainRate`
-- `CircleSize`
-- `OverallDifficulty`
-- `ApproachRate`
-- `SliderMultiplier`
-- `SliderTickRate`
-- `TimingPoints`
-- `HitObjects`
-
----
-
-## Timing resolution
-
-Implemented in `Beatmap`:
-
-```text
-GetActiveTimingPoint(double time)
-GetActiveUninheritedTimingPoint(double time)
-GetActiveInheritedTimingPoint(double time)
-GetEffectiveSliderVelocityMultiplier(double time)
-```
-
-Current slider velocity behavior:
-
-```text
-if there is no active inherited timing point
-    SV = 1.0
-
-otherwise
-    SV = 100 / -BeatLength
-```
-
-Timing methods use `double` because slider repeat, tail, and tick times may occur at fractional milliseconds.
-
----
-
-## Slider timing
-
-Section in `Beatmap.cs`:
-
-```text
-SLIDERS - TIMING
-```
-
-Implemented:
-
-```text
-GetSliderSpanDuration(HitObject slider)
-GetSliderDuration(HitObject slider)
-GetSliderEdgeTime(HitObject slider, int edgeIndex)
-GetSliderTickDistance(HitObject slider)
-GetSliderTickTimes(HitObject slider)
-```
-
-### Span duration
-
-```text
-spanDuration =
-    slider.Length
-    / (SliderMultiplier * 100 * SV)
-    * activeUninheritedTimingPoint.BeatLength
-```
-
-### Total duration
-
-```text
-sliderDuration =
-    spanDuration * slider.Slides
-```
-
-### Edge time
-
-```text
-edgeTime =
-    slider.Time
-    + spanDuration * edgeIndex
-```
-
-Edge interpretation:
-
-```text
-edgeIndex = 0               -> head
-edgeIndex = 1..Slides - 1   -> repeats
-edgeIndex = Slides          -> tail
-```
-
-`GetSliderSpanDuration` rejects a non-positive `SliderMultiplier`.
-
-`GetSliderEdgeTime` validates the requested edge index.
-
----
-
-## Slider edge hitsounds
-
-Implemented:
-
-```text
-GetSliderEdgeHitSoundLayers(HitObject slider, int edgeIndex)
-```
-
-Flow:
-
-```text
-calculate edgeTime:
-    GetSliderEdgeTime(slider, edgeIndex)
-
-validate:
-    SliderEdges.Count == Slides + 1
-
-get:
-    slider.SliderEdges[edgeIndex]
-
-resolve:
-    GetHitSoundLayers(
-        sliderEdge,
-        slider.HitSample,
-        edgeTime
-    )
-```
-
-Important verified behavior:
-
-A repeat or tail resolves `SampleSet`, `SampleIndex`, and `Volume` using the timing point active at the edge's actual time, not necessarily the timing point active when the slider started.
-
----
-
-## Slider body hitsounds
-
-Implemented:
-
-```text
-GetSliderBodyHitSoundLayers(HitObject slider)
-```
-
-Behavior:
-
-- Every slider produces a `SliderSlide` layer.
-- `SliderSlide` uses the effective normal sample set.
-- A slider with whistle also produces a `SliderWhistle` layer.
-- `SliderWhistle` uses the effective addition sample set.
-- Both use the effective sample index and volume.
-- `Finish` and `Clap` do not create continuous slider-body layers.
-
----
-
-## Slider ticks
-
-Implemented:
-
-```text
-GetSliderTickDistance(HitObject slider)
-GetSliderTickTimes(HitObject slider)
-GetSliderTickHitSoundLayers(HitObject slider)
-```
-
-### Tick distance
-
-Base tick distance:
-
-```text
-SliderMultiplier * 100 / SliderTickRate
-```
-
-Beatmap-version behavior:
-
-```text
-BeatmapVersion < 8
-    tickDistance = baseTickDistance
-
-BeatmapVersion >= 8
-    tickDistance = baseTickDistance * effectiveSV
-```
-
-`GetSliderTickDistance` rejects:
-
-```text
-SliderTickRate <= 0
-SliderMultiplier <= 0
-```
-
-### Tick times
-
-Current behavior includes:
-
-- ticks generated per slider span
-- reversed timing behavior on odd spans
-- chronological output
-- 10 ms end exclusion
-- support for multiple spans
-
-### Tick hitsound
-
-`GetSliderTickHitSoundLayers` produces one logical:
-
-```text
-SliderTick
-```
-
-The tick uses:
-
-```text
-effective normal sample set
-effective sample index
-effective volume
-```
-
-It does not use the slider's addition sample set.
-
----
-
-## Existing hitsound resolution
-
-Implemented functionality includes:
-
+- effective `SampleSet`
+- effective addition sample set
 - effective `SampleIndex`
 - effective `Volume`
-- effective normal sample set
-- effective addition sample set
-- beatmap `DefaultSampleSet`
-- `HitSoundType` bit flags
-- logical `HitSoundLayer` generation
-- custom filename handling
-- slider edge sample resolution
-- slider body logical layers
-- slider tick logical layers
+- standard hitobject hitsounds
+- slider edge hitsounds
+- slider body `SliderSlide`
+- slider body `SliderWhistle`
+- slider tick timing
+- slider tick hitsounds
+- custom filename representation
 
-Relevant overload:
-
-```text
-GetHitSoundLayers(
-    SliderEdge sliderEdge,
-    HitSample hitSample,
-    double time
-)
-```
-
-`HitSoundType` currently includes:
-
-```text
-Normal
-Whistle
-Finish
-Clap
-Custom
-SliderSlide
-SliderWhistle
-SliderTick
-```
-
----
-
-## Current code organization in Beatmap.cs
+Relevant `Beatmap.cs` organization:
 
 ```text
 PROPERTIES
@@ -380,270 +90,270 @@ HITSOUND LAYERS
     GetSliderTickHitSoundLayers
 ```
 
-Do not create new sections, helper classes, resolver classes, or abstractions unless they solve a real current problem.
+Keep slider edge, body, and tick responsibilities separate for now. There is no `GetAllSliderHitSounds()` API.
 
----
+### Physical sample resolution boundary
 
-## Important current design decisions
+`SampleResolver` now owns physical osu! sample lookup behavior.
 
-### Logical and physical sample identity remain separate
-
-A logical sample describes the sound the editor wants to use.
-
-The following values are part of osu!'s physical representation and are not automatically the identity of the logical sound:
+Implemented methods:
 
 ```text
-SampleSet
-SampleIndex
-Filename
+GetStandardSampleLookup(HitSoundLayer layer)
+GetSliderBodySampleLookup(HitSoundLayer layer)
+GetSliderTickSampleLookup(HitSoundLayer layer)
+ResolveCustomSamplePath(HitSoundLayer layer, string beatmapDirectory)
+ResolveBeatmapSamplePath(string? beatmapFilename, string beatmapDirectory)
+ResolveSample(HitSoundLayer layer, string beatmapDirectory)
 ```
 
-This separation must remain intact as Physical Sample Resolution is implemented.
-
-### No combined slider-event API yet
-
-Do not introduce a method such as:
+The existing lookup methods intentionally return:
 
 ```text
-GetAllSliderHitSounds()
+BeatmapFilename
+FallbackFilename
 ```
 
-at the current stage.
+rather than collapsing the lookup into one filename.
 
-Slider edges, continuous body sounds, and ticks have different timing and behavior.
+### Standard sample name mappings
 
-A combined API should only be introduced when a concrete consumer such as the timeline requires an event abstraction containing the necessary timing and hitsound information.
-
-### No global optimizer yet
-
-Do not introduce CP-SAT or another global optimizer until this deterministic cycle works:
+Current mappings:
 
 ```text
-parse
--> logical representation
--> export
--> reload
--> logical equivalence verification
+Normal          -> hitnormal
+Whistle         -> hitwhistle
+Finish          -> hitfinish
+Clap            -> hitclap
+SliderSlide     -> sliderslide
+SliderWhistle   -> sliderwhistle
+SliderTick      -> slidertick
 ```
 
-Prefer a deterministic solution first.
+### SampleIndex semantics
 
----
+Physical resolution preserves the distinction between `SampleIndex = 0` and `SampleIndex = 1`.
 
-## Test checkpoint
-
-Current verified status:
-
-```text
-100/100 passing
-```
-
-Coverage now includes:
-
-- parser settings and metadata
-- `BeatmapVersion`
-- timing inheritance
-- inherited/uninherited timing points
-- slider velocity
-- effective sample sets
-- sample index
-- volume
-- logical hitsound layers
-- slider span duration
-- slider total duration
-- real slider edge times
-- slider edge hitsounds
-- slider body hitsounds
-- slider tick distance
-- pre-v8 / v8+ tick behavior
-- slider tick times
-- reversed spans
-- slider tick hitsound layers
-- relevant invalid states
-- boundary cases
-
-Tests remain the primary verification mechanism.
-
-Never modify a correct test only to make an incorrect implementation pass.
-
----
-
-## Naming cleanup
-
-The old property typo:
-
-```text
-StarstNewCombo
-```
-
-has been corrected to:
-
-```text
-StartsNewCombo
-```
-
-Do not reintroduce the old name.
-
----
-
-## Publication-readiness checkpoint
-
-Repository publication completed.
-
-Pre-publication review completed:
-
-- `.gitignore` reviewed
-- no tracked local Windows paths found
-- no obvious tracked credentials/secrets found
-- synthetic test beatmap reviewed for redistribution safety
-- known `StartsNewCombo` typo fixed
-- README rewritten and updated
-- `CONTRIBUTING.md` added and reviewed
-- MIT `LICENSE` added
-- `docs/architecture.md` updated
-- `docs/ROADMAP.md` updated
-- `docs/DECISIONS.md` updated
-- `docs/AI_WORKFLOW.md` updated
-- `docs/WORKFLOW.md` updated
-- `docs/PROJECT_CONTEXT.md` updated
-- numbered `Phase N` terminology removed from project documentation
-- GitHub repository About and topics reviewed
-- GitHub repository features and security settings reviewed
-- GitHub Actions test workflow added at `.github/workflows/tests.yml`
-- final local regression completed: `100/100 passing`
-- `git diff --check` clean except for expected LF -> CRLF warnings on Windows
-- final repository status and diff review completed
-- publication checkpoint committed and pushed to `main`
-- first GitHub Actions `Tests` workflow run verified successfully
-- repository visibility changed to public
-
-Public repository:
-
-```text
-https://github.com/FAJIFBEFJHA/osu-hitsound-editor
-```
-
-The read-only Drive mirror should be refreshed at session close after the final context update is committed and pushed.
-
-The repository-publication milestone is separate from the later osu!tools submission milestone.
-
----
-
-## Physical Sample Resolution preparation
-
-The next functional stage is **Physical Sample Resolution**.
-
-The stage must preserve osu! sample lookup semantics instead of reducing physical resolution to filename generation alone.
-
-Important distinction:
+Current rule:
 
 ```text
 SampleIndex = 0
-```
+    BeatmapFilename = null
+    fallback remains available
 
-does not participate in beatmap custom-sample lookup in the same way as:
-
-```text
 SampleIndex = 1
+    BeatmapFilename = unindexed standard filename
+    fallback = same unindexed standard filename
+
+SampleIndex > 1
+    BeatmapFilename = indexed standard filename
+    fallback = unindexed standard filename
 ```
 
-even when both may correspond to the same base filename.
+Therefore, a matching unindexed file in the beatmap directory must not be used when the logical layer has `SampleIndex = 0`.
 
-Physical sample resolution must be able to distinguish between:
+### Beatmap sample extension lookup
 
-- sample found in the beatmap
-- external fallback required
-- explicit custom filename found
-- explicit custom filename missing
+Verified against the official `ppy/osu` implementation.
 
-This behavior is recorded as architectural decision `D017`.
-
-Do not introduce `SampleId`, audio metadata, optimization, or a global resolver abstraction before the required lookup behavior is clear and tested.
-
----
-
-## Next functional stage
-
-### Physical Sample Resolution
-
-Planned responsibilities:
+Legacy sample lookup order is:
 
 ```text
-discover sample files used by the beatmap
-resolve osu! sample filenames
-separate logical sample identity from physical .osu representation
-define a stable logical SampleId
-load sample metadata required by the editor
-handle missing samples predictably
-add sample-resolution tests
+.wav
+.mp3
+.ogg
 ```
 
-Do not introduce sample optimization during this stage.
+`ResolveBeatmapSamplePath(...)` checks those extensions in that order and returns the first physical path found.
 
----
+### Explicit custom filename lookup
 
-## Later submission milestone
+`ResolveCustomSamplePath(...)` treats an explicit filename separately from standard sample lookup.
 
-The project should eventually be evaluated for submission to:
+Current result:
 
 ```text
-https://tools.osuck.net/submit
+file exists
+    -> full physical path
+
+file does not exist
+    -> null
 ```
 
-The intended evaluation point is after:
+A missing explicit custom filename is not treated as ordinary external fallback.
+
+### Physical resolution result model
+
+Implemented:
 
 ```text
-Export and Round-Trip Verification
+SampleResolutionOutcome
+SampleResolutionResult
 ```
 
-By that point the project should provide a complete useful workflow for another user, including opening, editing, previewing, exporting, and verifying a beatmap.
-
-Before submission, re-check the current osu!tools submission requirements rather than relying on old assumptions.
-
-Sample Optimization is not currently considered a mandatory requirement for the first osu!tools submission.
-
----
-
-## Next task
-
-Begin **Physical Sample Resolution** by defining and testing the smallest deterministic behavior required to preserve osu! sample lookup semantics.
-
-Start with standard hitsound lookup behavior before introducing file-system resolution, `SampleId`, audio metadata, or optimization.
-
----
-
-## Technical debt / deferred work
-
-Do not mix these into unrelated functional changes.
-
-- Use `CultureInfo.InvariantCulture` consistently for `.osu` numeric parsing.
-- Improve parser robustness for malformed or empty fields.
-- Validate slider edge data more broadly when parser validation is addressed.
-- Re-evaluate extreme slider/SV clamping behavior only if real requirements justify it.
-- Add broader real-world beatmap coverage later, using redistributable or synthetic test data.
-
----
-
-## Documentation terminology
-
-Roadmap stages should use descriptive names instead of numbered phases.
-
-Current sequence:
+`SampleResolutionOutcome` values:
 
 ```text
-Beatmap Parsing and Base Model
-Hitsound Resolution
-Physical Sample Resolution
-Audio Infrastructure
-Desktop Editor and Timeline
-Export and Round-Trip Verification
-Sample Optimization
-Integration and Release Polish
+BeatmapSampleFound
+ExternalFallbackRequired
+CustomSampleFound
+CustomSampleMissing
 ```
 
-Use these names consistently in project documentation.
+`SampleResolutionResult` carries:
 
----
+```text
+Outcome
+ResolvedPath
+FallbackFilename
+```
+
+Interpretation:
+
+```text
+BeatmapSampleFound
+    ResolvedPath = physical beatmap sample path
+    FallbackFilename = standard fallback filename
+
+ExternalFallbackRequired
+    ResolvedPath = null
+    FallbackFilename = standard fallback filename
+
+CustomSampleFound
+    ResolvedPath = explicit custom file path
+    FallbackFilename = null
+
+CustomSampleMissing
+    ResolvedPath = null
+    FallbackFilename = null
+```
+
+### Integrated resolution
+
+`ResolveSample(...)` coordinates the previous methods.
+
+Flow:
+
+```text
+HitSoundLayer
+    -> Custom
+        -> ResolveCustomSamplePath
+        -> CustomSampleFound / CustomSampleMissing
+
+    -> Normal / Whistle / Finish / Clap
+        -> GetStandardSampleLookup
+
+    -> SliderSlide / SliderWhistle
+        -> GetSliderBodySampleLookup
+
+    -> SliderTick
+        -> GetSliderTickSampleLookup
+
+    standard/slider lookup
+        -> ResolveBeatmapSamplePath
+        -> BeatmapSampleFound / ExternalFallbackRequired
+```
+
+## Test progression for Physical Sample Resolution
+
+Known checkpoints from the current development session:
+
+```text
+100/100  Hitsound Resolution baseline before physical lookup work
+114/114  standard sample lookup
+126/126  slider body sample lookup
+138/138  slider tick sample lookup
+148/148  explicit custom sample path lookup
+159/159  beatmap sample extension lookup
+168/168  integrated physical sample resolution
+```
+
+Treat the actual test suite as the implementation truth if this list ever becomes stale.
+
+## osu!stable vs osu!lazer explicit filename discrepancy
+
+A compatibility difference was confirmed manually using both installed clients.
+
+### Official implementation evidence
+
+In the current `ppy/osu` legacy parser, an explicit filename creates a `FileHitSampleInfo`, while `Finish`, `Whistle`, and `Clap` flags are still converted into additional sample entries.
+
+This means the lazer-side logical representation can contain:
+
+```text
+explicit custom file
++ addition samples selected by hitSound flags
+```
+
+### Manual osu!stable result
+
+For the seven-object manual comparison beatmap, the audible osu!stable results in order were:
+
+```text
+normal
+custom
+custom
+custom
+custom
+custom
+normal + clap
+```
+
+The tested explicit-filename cases therefore behaved as custom-only in stable.
+
+### Manual osu!lazer result
+
+Running the same comparison in osu!lazer produced the combined behavior expected from lazer's current handling: the explicit custom sample and applicable addition samples can coexist.
+
+### Important limitation
+
+The exact seven input combinations are not recorded in this checkpoint. Do not reconstruct the full case matrix from the output sequence alone.
+
+Before changing production semantics, retain or recreate the test beatmap and record each input case explicitly.
+
+### Current decision
+
+The project uses documented legacy/osu!stable semantics as the canonical logical behavior for an explicit `hitSample.filename`.
+
+Canonical interpretation:
+
+```text
+explicit hitSample.filename
+    -> custom sample only
+```
+
+The original parsed `hitSound` flags and `hitSample.filename` remain preserved as source data. Suppression of `Clap`, `Whistle`, and `Finish` additions belongs to logical hitsound resolution rather than parsing.
+
+The current osu!lazer behavior, where the custom sample can coexist with applicable additions, is treated as client-specific behavior. Do not introduce a stable/lazer compatibility mode unless a concrete future consumer requires it.
+
+Before changing `GetHitSoundLayers(...)`, preserve or recreate the explicit-filename comparison fixture and record every input case explicitly.
+
+## Tooling checkpoint
+
+A repository `.editorconfig` is present locally to align VS Code/C# naming diagnostics and suggestions with the project's established naming conventions.
+
+## Refactoring status
+
+There is visible duplication among standard, slider-body, and slider-tick filename lookup methods.
+
+Do not refactor it yet.
+
+The compatibility policy is now decided, but the explicit-filename fixture, logical behavior change, and regression tests are not complete. A helper abstraction remains premature until that behavior is implemented and verified.
+
+## Deferred work
+
+Do not mix these into the current compatibility investigation unless they become blockers.
+
+- Define stable logical `SampleId` only after physical-resolution semantics are trustworthy.
+- Audio decoding/playback belongs to the later Audio Infrastructure stage.
+- Export and round-trip equivalence come before global optimization.
+- Do not introduce CP-SAT or another global optimizer yet.
+- Use `CultureInfo.InvariantCulture` for `.osu` numeric parsing when parser robustness work resumes.
+- Improve malformed/empty parser field handling later.
+
+## Exact next task
+
+Create or preserve a reproducible explicit-filename compatibility fixture and record each input case explicitly before modifying `GetHitSoundLayers(...)` to implement the chosen custom-only legacy semantics.
 
 ## Source-of-truth order
 

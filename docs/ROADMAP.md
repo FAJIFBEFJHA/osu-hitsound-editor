@@ -35,8 +35,6 @@ Implemented foundations include:
 
 **Status: COMPLETE**
 
-Current checkpoint: **100/100 tests passing**
-
 Completed:
 
 - [x] Resolve active timing point
@@ -70,57 +68,74 @@ Completed:
 
 A combined `GetAllSliderHitSounds()`-style API is intentionally deferred.
 
-The current slider responsibilities remain separate because head/repeat/tail events, continuous body sounds, and ticks have different timing and behavior. A combined event API should only be introduced when the timeline or another concrete consumer requires it.
+The current slider responsibilities remain separate because head/repeat/tail events, continuous body sounds, and ticks have different timing and behavior. A combined event API should only be introduced when the timeline or another concrete consumer requires an event abstraction containing the necessary timing and hitsound information.
+
+The Hitsound Resolution baseline was `100/100` tests beforhysical Sample Resolution began.
 
 ---
 
-## Public Repository Milestone
+## Public repository milestone
 
-**Target: before starting Physical Sample Resolution**
+**Status: COMPLETE**
 
-Completed:
+Completed before/currently in Physical Sample Resolution:
 
-- [x] All tests pass
+- [x] All tests passed at publication checkpoint
+- [x] Review/remove local-only paths
+- [x] Review secrets
+- [x] Review redistributed content
 - [x] Verify `.gitignore`
-- [x] Verify no tracked local Windows paths
-- [x] Check tracked files for obvious secrets or credentials
-- [x] Verify test data does not include redistributable copyrighted beatmap/audio content
-- [x] Fix known naming/typo issues
-- [x] Review README in the author's own voice
-- [x] Keep the honest AI-mentorship disclosure
-- [x] Add `CONTRIBUTING.md`
-- [x] Add MIT `LICENSE`
-- [x] Review `docs/architecture.md`
-- [x] Review this roadmap
+- [x] Fix known naming/typo issues found during readiness work
+- [x] Review README
+- [x] Keep AI-mentorship disclosure
+- [x] Add license
+- [x] Publish repository
 
-Remaining:
+Repository:
 
-- [ ] Review `docs/DECISIONS.md`
-- [ ] Review `docs/PROJECT_CONTEXT.md`
-- [ ] Review `docs/AI_WORKFLOW.md` and `docs/WORKFLOW.md` for stale numbered-stage references
-- [ ] Replace remaining `Phase N` terminology in project documentation where it refers to roadmap stages
-- [ ] Run final `dotnet test`
-- [ ] Review final `git status` and `git diff`
-- [ ] Sync the final local project-context documents to the read-only Drive mirror
-- [ ] Make the publication commit and push when the documentation review is complete
+```text
+https://github.com/FAJIFBEFJHA/osu-hitsound-editor
+```
 
 ---
 
 ## Physical Sample Resolution
 
-**Status: NOT STARTED**
+**Status: IN PROGRESS**
 
-This is the next functional development stage after the public-repository milestone is complete.
+Current full-suite checkpoint: **168/168 tests passing**
 
-Planned:
+Completed:
 
-- [ ] Discover sample files used by the beatmap
-- [ ] Resolve osu! sample filenames
-- [ ] Separate logical sample identity from physical `.osu` representation
-- [ ] Define a stable logical `SampleId`
-- [ ] Load sample metadata required by the editor
-- [ ] Handle missing samples predictably
-- [ ] Add sample-resolution tests
+- [x] Introduce `SampleResolver` as the physical sample lookup boundary
+- [x] Resolve standard hitnormal/hitwhistle/hitfinish/hitclap lookup names
+- [x] Resolve slider body `sliderslide` / `sliderwhistle` lookup names
+- [x] Resolve slider tick `slidertick` lookup names
+- [x] Preserve `SampleIndex = 0` vs `SampleIndex = 1` semantics
+- [x] Resolve explicit custom filename existence in the beatmap directory
+- [x] Verify beatmap sample extension order `.wav -> .mp3 -> .ogg`
+- [x] Resolve supported beatmap sample extensions in that order
+- [x] Represent physical resolution outcome explicitly
+- [x] Distinguish beatmap sample found vs external fallback required
+- [x] Distinguish explicit custom sample found vs missing
+- [x] Integrate lookup through `ResolveSample(...)`
+- [x] Add physical sample-resolution tests
+- [x] Manually confirm a stable/lazer behavior difference for explicit custom filenames
+
+Current compatibility work:
+
+- [ ] Preserve or recreate the explicit-filename comparison beatmap as a reproducible fixture
+- [ ] Record each test object's exact `hitSound` flags and `hitSample.filename`
+- [x] Use documented legacy/osu!stable custom-only semantics as the canonical behavior for explicit `hitSample.filename`
+- [ ] Update logical custom-filename behavior only after the fixture is recorded
+- [ ] Add regression tests for the chosen compatibility semantics
+
+Remaining after explicit-filename compatibility work is complete:
+
+- [ ] Review whether any additional physical fallback states are required
+- [ ] Define stable logical `SampleId` only when identity requirements are clear
+- [ ] Load only the sample metadata required by later editor/audio work
+- [ ] Run the full Physical Sample Resolution regression suite and review the boundary before moving to Audio Infrastructure
 
 Do not introduce global optimization yet.
 
@@ -140,7 +155,6 @@ Planned:
 - [ ] Seek
 - [ ] Play hitsound layers together
 - [ ] Synchronize playback position with editor timeline
-- [ ] Handle audio-device errors
 
 ---
 
@@ -152,11 +166,6 @@ Primary UI technology: WPF unless a materially better reason emerges.
 
 Planned:
 
-- [ ] WPF application shell
-- [ ] Open beatmap
-- [ ] Timeline
-- [ ] Playhead
-- [ ] Zoom
 - [ ] Waveform
 - [ ] Hitsound events/tracks
 - [ ] Selection
@@ -195,7 +204,6 @@ parse
 ```
 
 ---
-
 ## osu!tools Submission Milestone
 
 **Target: after Export and Round-Trip Verification**
@@ -216,6 +224,8 @@ Before submission:
 - [ ] Prepare screenshots, description, download link, and repository link as required.
 
 Sample Optimization is not required for the first submission unless later development shows that it is necessary for the editor's core workflow.
+
+---
 
 ## Sample Optimization
 
