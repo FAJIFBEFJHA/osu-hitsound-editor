@@ -225,7 +225,9 @@ Rules:
 - The AI must not modify the Google Drive copies directly.
 - After committing and pushing documentation changes, synchronize the local
   documents to Google Drive.
-- At the start of a session, use the repository checkpoint as the authoritative state. Live Google Drive may be consulted as its continuity mirror. Never substitute a Project snapshot for a live Google Drive read when freshness matters.
+- Because the repository is public, use the current repository state as the primary continuity source when direct GitHub access is available.
+- Google Drive remains a secondary continuity mirror and fallback when direct repository access is unavailable.
+- Project snapshots of Drive files may be stale and must not be used to override or diagnose the current repository state.
 - If the local repository and Google Drive disagree, the local repository wins.
 - Never merge divergent local and Drive continuity files automatically.
 - A Project snapshot exposed to ChatGPT is not necessarily the current live Google Drive file.

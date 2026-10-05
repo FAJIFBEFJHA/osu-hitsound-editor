@@ -250,7 +250,12 @@ git commit -m "..."
 git push
 ```
 
-If a local continuity mirror is used, synchronize it only after the repository changes have been committed and pushed.
+Google Drive is an optional continuity mirror, not the primary project checkpoint.
+
+When direct repository access is available, use the pushed repository state for continuity and verification.
+
+If the Drive mirror is used, synchronize it only after repository changes have been committed and pushed.
+
 When verifying the continuity mirror:
 
 ```text
