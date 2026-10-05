@@ -251,6 +251,21 @@ git push
 ```
 
 If a local continuity mirror is used, synchronize it only after the repository changes have been committed and pushed.
+When verifying the continuity mirror:
+
+```text
+repository / pushed main
+    -> authoritative checkpoint
+
+live Google Drive
+    -> mirror to verify
+
+Project snapshot exposed to AI
+    -> potentially stale cached/indexed copy
+```
+
+Do not diagnose a synchronization failure from a Project snapshot alone.
+If freshness matters, verify the live mirror directly or compare its metadata first.
 
 ---
 
