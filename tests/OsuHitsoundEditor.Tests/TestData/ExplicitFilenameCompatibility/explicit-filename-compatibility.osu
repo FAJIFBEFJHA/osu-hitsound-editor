@@ -1,0 +1,55 @@
+osu file format v14
+
+[General]
+AudioFilename: silence.wav
+AudioLeadIn: 0
+PreviewTime: 2000
+Countdown: 0
+SampleSet: Normal
+StackLeniency: 0.7
+Mode: 0
+
+[Editor]
+Bookmarks: 2000,4000,6000,8000,10000,12000,14000
+DistanceSpacing: 1
+BeatDivisor: 4
+GridSize: 4
+TimelineZoom: 1
+
+[Metadata]
+Title:Explicit Filename Compatibility Fixture
+TitleUnicode:Explicit Filename Compatibility Fixture
+Artist:osu-hitsound-editor
+ArtistUnicode:osu-hitsound-editor
+Creator:osu-hitsound-editor
+Version:Explicit Filename Compatibility
+Source:
+Tags:compatibility fixture explicit filename hitsound
+
+[Difficulty]
+HPDrainRate:5
+CircleSize:4
+OverallDifficulty:5
+ApproachRate:5
+SliderMultiplier:1.4
+SliderTickRate:1
+
+[Events]
+
+[TimingPoints]
+0,500,4,1,1,100,1,0
+
+[Colours]
+Combo1 : 255,128,128
+Combo2 : 128,255,128
+Combo3 : 128,128,255
+Combo4 : 255,255,128
+
+[HitObjects]
+64,192,2000,5,0,1:1:1:100:
+128,192,4000,5,0,1:1:1:100:custom.wav
+192,192,6000,5,2,1:1:1:100:custom.wav
+256,192,8000,5,4,1:1:1:100:custom.wav
+320,192,10000,5,8,1:1:1:100:custom.wav
+384,192,12000,5,14,1:1:1:100:custom.wav
+448,192,14000,5,8,1:1:1:100:

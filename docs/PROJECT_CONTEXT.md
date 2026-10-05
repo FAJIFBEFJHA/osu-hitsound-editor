@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT
 
-Last updated: 2026-10-04
+Last updated: 2026-10-05
 
 ## Project
 
@@ -23,16 +23,16 @@ The repository is public.
 Current test status:
 
 ```text
-168/168 passing
+182/182 passing
 ```
 
 Hitsound Resolution was completed before starting Physical Sample Resolution.
 
 ## Current objective
 
-Preserve or recreate a reproducible explicit-filename compatibility fixture and record each input case before changing logical hitsound generation.
+Close the explicit-filename compatibility work with reproducible fixtures and regression coverage, then verify the remaining unresolved legacy slider inheritance case before continuing Physical Sample Resolution.
 
-The compatibility policy is now decided: legacy `.osu` explicit custom filenames use documented/osu!stable custom-only semantics as the canonical logical behavior. Do not modify `Beatmap.GetHitSoundLayers(...)` until the fixture is recorded and ready to support regression tests.
+The canonical compatibility policy is implemented: legacy `.osu` explicit custom filenames resolve to the custom sample only. Slider trailing `hitSample.index`, `hitSample.volume`, and `hitSample.filename` are preserved as source data but do not override legacy slider edge/body/tick sample resolution.
 
 ## Current implementation checkpoint
 
@@ -60,6 +60,7 @@ Relevant `Beatmap.cs` organization:
 PROPERTIES
 
 RESOLUTION HELPERS
+    GetSampleTimingPoint
 
 TIMING
     GetActiveTimingPoint
@@ -266,67 +267,90 @@ Known checkpoints from the current development session:
 148/148  explicit custom sample path lookup
 159/159  beatmap sample extension lookup
 168/168  integrated physical sample resolution
+173/173  explicit-filename hitobject compatibility
+176/176  remaining spinner/slider compatibility regression setup
+182/182  legacy slider sample-source semantics and documented fallback coverage
 ```
 
 Treat the actual test suite as the implementation truth if this list ever becomes stale.
 
-## osu!stable vs osu!lazer explicit filename discrepancy
+## osu!stable vs osu!lazer explicit filename compatibility
 
-A compatibility difference was confirmed manually using both installed clients.
-
-### Official implementation evidence
-
-In the current `ppy/osu` legacy parser, an explicit filename creates a `FileHitSampleInfo`, while `Finish`, `Whistle`, and `Clap` flags are still converted into additional sample entries.
-
-This means the lazer-side logical representation can contain:
+Two reproducible fixtures are preserved under test data:
 
 ```text
-explicit custom file
-+ addition samples selected by hitSound flags
+TestData/ExplicitFilenameCompatibility/
+TestData/ExplicitFilenameRemainingComponents/
 ```
 
-### Manual osu!stable result
+The first fixture records seven hitobject cases covering explicit filename behavior and control cases.
 
-For the seven-object manual comparison beatmap, the audible osu!stable results in order were:
+Manual playback confirmed:
 
 ```text
-normal
-custom
-custom
-custom
-custom
-custom
-normal + clap
+osu!stable
+    explicit filename -> custom sample only
+
+osu!lazer
+    explicit filename -> custom sample plus applicable additions
 ```
 
-The tested explicit-filename cases therefore behaved as custom-only in stable.
+The project deliberately uses the legacy/osu!stable custom-only result as its canonical logical model.
 
-### Manual osu!lazer result
+`GetHitSoundLayers(HitObject)` now returns only `Custom` when `HitSample.Filename` is present while preserving the parsed source fields.
 
-Running the same comparison in osu!lazer produced the combined behavior expected from lazer's current handling: the explicit custom sample and applicable addition samples can coexist.
-
-### Important limitation
-
-The exact seven input combinations are not recorded in this checkpoint. Do not reconstruct the full case matrix from the output sequence alone.
-
-Before changing production semantics, retain or recreate the test beatmap and record each input case explicitly.
-
-### Current decision
-
-The project uses documented legacy/osu!stable semantics as the canonical logical behavior for an explicit `hitSample.filename`.
-
-Canonical interpretation:
+The second fixture covers spinner and slider behavior. Manual testing plus the official `ppy/osu` legacy parser confirmed that slider trailing `hitSample` handling is different from ordinary hitobjects:
 
 ```text
-explicit hitSample.filename
-    -> custom sample only
+slider HitSample.NormalSet
+slider HitSample.AdditionSet
+    -> remain relevant to slider sample-bank resolution
+
+slider HitSample.Index
+slider HitSample.Volume
+slider HitSample.Filename
+    -> do not override legacy slider edge/body/tick sample resolution
 ```
 
-The original parsed `hitSound` flags and `hitSample.filename` remain preserved as source data. Suppression of `Clap`, `Whistle`, and `Finish` additions belongs to logical hitsound resolution rather than parsing.
+Current implemented data flow:
 
-The current osu!lazer behavior, where the custom sample can coexist with applicable additions, is treated as client-specific behavior. Do not introduce a stable/lazer compatibility mode unless a concrete future consumer requires it.
+```text
+slider edges
+    sample sets -> SliderEdge values
+    SampleIndex / Volume -> sample timing point at edge time
+    explicit slider HitSample.Filename -> ignored for edge generation
 
-Before changing `GetHitSoundLayers(...)`, preserve or recreate the explicit-filename comparison fixture and record every input case explicitly.
+slider body
+    sample sets -> slider HitSample NormalSet / AdditionSet
+    SampleIndex / Volume -> sample timing point at slider start
+
+slider ticks
+    sample set -> slider HitSample NormalSet
+    SampleIndex / Volume -> sample timing point at slider start
+```
+
+`GetSampleTimingPoint(double time)` resolves the sample timing point used for legacy sample values:
+
+```text
+active timing point at or before time
+    -> use it
+
+time is before every timing point
+    -> use the first timing point in the map
+
+no timing points exist
+    -> caller uses documented defaults
+       SampleIndex = 0
+       Volume = 100
+```
+
+The lazer-specific spinner traversal sound observed during manual testing is intentionally deferred. It is not part of the current canonical legacy model.
+
+### Remaining compatibility question
+
+The interaction between slider `edgeSets = 0:0` and the slider-level `NormalSet` / `AdditionSet` still needs explicit verification against official behavior or a reproducible beatmap before changing code.
+
+Do not guess this rule.
 
 ## Tooling checkpoint
 
@@ -338,7 +362,7 @@ There is visible duplication among standard, slider-body, and slider-tick filena
 
 Do not refactor it yet.
 
-The compatibility policy is now decided, but the explicit-filename fixture, logical behavior change, and regression tests are not complete. A helper abstraction remains premature until that behavior is implemented and verified.
+`GetHitSoundLayers(SliderEdge, HitSample, double time)` currently retains the `HitSample` parameter even though legacy slider edge resolution no longer uses its `Index`, `Volume`, or `Filename`. Revisit that public signature only during a deliberate boundary/API review; do not mix it into the next behavior investigation.
 
 ## Deferred work
 
@@ -353,7 +377,7 @@ Do not mix these into the current compatibility investigation unless they become
 
 ## Exact next task
 
-Create or preserve a reproducible explicit-filename compatibility fixture and record each input case explicitly before modifying `GetHitSoundLayers(...)` to implement the chosen custom-only legacy semantics.
+Verify the legacy semantics of slider `edgeSets = 0:0`, specifically whether zero-valued edge sample sets inherit from the slider-level `NormalSet` / `AdditionSet` or directly from the active sample timing point. Use official osu! documentation / official `ppy/osu` implementation and, if needed, a reproducible beatmap fixture before changing production code.
 
 ## Source-of-truth order
 

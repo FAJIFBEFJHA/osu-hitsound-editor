@@ -233,4 +233,89 @@ public class BeatmapLoaderTests
         // Assert
         Assert.Equal(14, beatmap.BeatmapVersion);
     }
+    [Fact]
+    public void Load_ExplicitFilenameCompatibilityFixture_ParsesExpectedCases()
+    {
+        // Arrange
+        string path = Path.Combine(
+            AppContext.BaseDirectory,
+            "TestData",
+            "ExplicitFilenameCompatibility",
+            "explicit-filename-compatibility.osu"
+        );
+
+        BeatmapLoader loader = new BeatmapLoader();
+
+        // Act
+        Beatmap beatmap = loader.Load(path);
+
+        // Assert
+        Assert.Equal(7, beatmap.HitObjects.Count);
+
+        Assert.Equal(0, beatmap.HitObjects[0].HitSound);
+        Assert.Equal(string.Empty, beatmap.HitObjects[0].HitSample.Filename);
+
+        Assert.Equal(0, beatmap.HitObjects[1].HitSound);
+        Assert.Equal("custom.wav", beatmap.HitObjects[1].HitSample.Filename);
+
+        Assert.Equal(2, beatmap.HitObjects[2].HitSound);
+        Assert.Equal("custom.wav", beatmap.HitObjects[2].HitSample.Filename);
+
+        Assert.Equal(4, beatmap.HitObjects[3].HitSound);
+        Assert.Equal("custom.wav", beatmap.HitObjects[3].HitSample.Filename);
+
+        Assert.Equal(8, beatmap.HitObjects[4].HitSound);
+        Assert.Equal("custom.wav", beatmap.HitObjects[4].HitSample.Filename);
+
+        Assert.Equal(14, beatmap.HitObjects[5].HitSound);
+        Assert.Equal("custom.wav", beatmap.HitObjects[5].HitSample.Filename);
+
+        Assert.Equal(8, beatmap.HitObjects[6].HitSound);
+        Assert.Equal(string.Empty, beatmap.HitObjects[6].HitSample.Filename);
+    }
+    [Fact]
+    public void Load_ExplicitFilenameRemainingComponentsFixture_PreservesRawValues()
+    {
+        // Arrange
+        string path = Path.Combine(
+            AppContext.BaseDirectory,
+            "TestData",
+            "ExplicitFilenameRemainingComponents",
+            "explicit-filename-remaining-components.osu"
+        );
+
+        BeatmapLoader loader = new BeatmapLoader();
+
+        // Act
+        Beatmap beatmap = loader.Load(path);
+
+        // Assert
+        Assert.Equal(2, beatmap.HitObjects.Count);
+
+        HitObject spinner = beatmap.HitObjects[0];
+
+        Assert.True(spinner.IsSpinner);
+        Assert.Equal(14, spinner.HitSound);
+        Assert.Equal(1, spinner.HitSample.NormalSet);
+        Assert.Equal(1, spinner.HitSample.AdditionSet);
+        Assert.Equal(1, spinner.HitSample.Index);
+        Assert.Equal(100, spinner.HitSample.Volume);
+        Assert.Equal("custom.wav", spinner.HitSample.Filename);
+
+        HitObject slider = beatmap.HitObjects[1];
+
+        Assert.True(slider.IsSlider);
+        Assert.Equal(2, slider.HitSound);
+
+        Assert.Equal(1, slider.HitSample.NormalSet);
+        Assert.Equal(1, slider.HitSample.AdditionSet);
+        Assert.Equal(1, slider.HitSample.Index);
+        Assert.Equal(100, slider.HitSample.Volume);
+        Assert.Equal("custom.wav", slider.HitSample.Filename);
+
+        Assert.Equal(3, slider.SliderEdges.Count);
+        Assert.Equal(8, slider.SliderEdges[0].HitSound);
+        Assert.Equal(4, slider.SliderEdges[1].HitSound);
+        Assert.Equal(2, slider.SliderEdges[2].HitSound);
+    }
 }

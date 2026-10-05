@@ -235,3 +235,47 @@ Do not introduce a stable/lazer compatibility mode unless a concrete consumer la
 Before changing `GetHitSoundLayers(...)`, preserve or recreate a reproducible explicit-filename fixture and record its input cases explicitly.
 
 **Reason:** The documented legacy format semantics and manual osu!stable testing agree on custom-only playback for explicit filenames, while manual osu!lazer testing confirms a real client divergence. Choosing the legacy/stable semantics gives the project one deterministic logical model for parse -> logical representation -> export -> reload -> equivalence without prematurely introducing client-target abstractions.
+---
+
+## D021 â€” Legacy slider trailing hitSample fields have limited scope
+
+**Decision:** For legacy `.osu` sliders, preserve the trailing `hitSample` source fields but do not treat all of them as ordinary slider-wide overrides.
+
+Current canonical behavior:
+
+```text
+HitSample.NormalSet
+HitSample.AdditionSet
+    -> participate in slider sample-bank resolution
+
+HitSample.Index
+HitSample.Volume
+HitSample.Filename
+    -> do not override slider edge/body/tick logical sample generation
+```
+
+For slider edges:
+
+```text
+sample sets
+    -> edge-specific values
+
+SampleIndex / Volume
+    -> sample timing point at the edge's real time
+```
+
+For slider body and ticks:
+
+```text
+sample sets
+    -> slider-level normal/addition sample-bank values as applicable
+
+SampleIndex / Volume
+    -> sample timing point at slider start
+```
+
+When resolving sample timing values before the first timing point, use the first timing point in the map. If the beatmap contains no timing points, use the documented/default legacy values `SampleIndex = 0` and `Volume = 100`.
+
+The unresolved `edgeSets = 0:0` inheritance rule is intentionally not specified by this decision until it is verified from official evidence or a reproducible fixture.
+
+**Reason:** The official legacy parser applies only sample-bank fields from a slider's trailing `hitSample`, while manual stable/lazer fixtures confirm that an explicit slider filename does not become an ordinary edge custom sample. Keeping source preservation separate from logical applicability prevents parser data loss without inventing unsupported playback semantics.

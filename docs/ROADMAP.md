@@ -103,7 +103,7 @@ https://github.com/FAJIFBEFJHA/osu-hitsound-editor
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **168/168 tests passing**
+Current full-suite checkpoint: **182/182 tests passing**
 
 Completed:
 
@@ -122,21 +122,30 @@ Completed:
 - [x] Add physical sample-resolution tests
 - [x] Manually confirm a stable/lazer behavior difference for explicit custom filenames
 
-Current compatibility work:
+Completed compatibility work:
 
-- [ ] Preserve or recreate the explicit-filename comparison beatmap as a reproducible fixture
-- [ ] Record each test object's exact `hitSound` flags and `hitSample.filename`
+- [x] Preserve the explicit-filename comparison beatmap as a reproducible fixture
+- [x] Record each test object's exact `hitSound` flags and `hitSample.filename`
 - [x] Use documented legacy/osu!stable custom-only semantics as the canonical behavior for explicit `hitSample.filename`
-- [ ] Update logical custom-filename behavior only after the fixture is recorded
-- [ ] Add regression tests for the chosen compatibility semantics
+- [x] Update logical hitobject custom-filename behavior
+- [x] Add regression tests for the chosen custom-only compatibility semantics
+- [x] Preserve a second fixture covering spinner and remaining slider behavior
+- [x] Verify that slider trailing `HitSample.Index`, `HitSample.Volume`, and `HitSample.Filename` do not override edge/body/tick sample generation
+- [x] Resolve slider edge `SampleIndex` / `Volume` from the sample timing point at the edge time
+- [x] Resolve slider body/tick `SampleIndex` / `Volume` from the sample timing point at slider start
+- [x] Cover pre-first-timing-point and no-timing-point sample fallbacks
+- [x] Reach `182/182` passing tests
 
-Remaining after explicit-filename compatibility work is complete:
+Current next compatibility question:
+
+- [ ] Verify slider `edgeSets = 0:0` inheritance semantics from official evidence or a reproducible fixture before changing code
+
+Remaining Physical Sample Resolution work:
 
 - [ ] Review whether any additional physical fallback states are required
 - [ ] Define stable logical `SampleId` only when identity requirements are clear
 - [ ] Load only the sample metadata required by later editor/audio work
 - [ ] Run the full Physical Sample Resolution regression suite and review the boundary before moving to Audio Infrastructure
-
 Do not introduce global optimization yet.
 
 ---
