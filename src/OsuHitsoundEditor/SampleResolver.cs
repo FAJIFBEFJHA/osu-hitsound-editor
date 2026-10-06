@@ -3,7 +3,7 @@ namespace OsuHitsoundEditor;
 public class SampleResolver
 {
     // STANDARD SAMPLE LOOKUP
-    public (string? BeatmapFilename, string FallbackFilename) GetStandardSampleLookup(HitSoundLayer layer)
+    public (string? BeatmapFilename, string? BeatmapUniversalFilename, string FallbackFilename) GetStandardSampleLookup(HitSoundLayer layer)
     {
         ArgumentNullException.ThrowIfNull(layer);
         if (layer.SampleIndex < 0)
@@ -59,22 +59,25 @@ public class SampleResolver
         }
         string fallbackFilename = sampleSetPrefix + "-" + soundName + ".wav";
         string? beatmapFilename = null;
+        string? beatmapUniversalFilename = null;
         if (layer.SampleIndex == 0)
         {
-            return (null, fallbackFilename);
+            return (null, null, fallbackFilename);
         }
         if (layer.SampleIndex == 1)
         {
             beatmapFilename = fallbackFilename;
+            beatmapUniversalFilename = soundName + ".wav";
         }
         if (layer.SampleIndex > 1)
         {
             beatmapFilename = sampleSetPrefix + "-" + soundName + layer.SampleIndex + ".wav";
+            beatmapUniversalFilename = soundName + ".wav";
         }
-        return (beatmapFilename, fallbackFilename);
+        return (beatmapFilename, beatmapUniversalFilename, fallbackFilename);
     }
     //SLIDER SAMPLE LOOKUP
-    public (string? BeatmapFilename, string FallbackFilename) GetSliderBodySampleLookup(HitSoundLayer layer)
+    public (string? BeatmapFilename, string? BeatmapUniversalFilename, string FallbackFilename) GetSliderBodySampleLookup(HitSoundLayer layer)
     {
         ArgumentNullException.ThrowIfNull(layer);
         if (layer.SampleIndex < 0)
@@ -124,21 +127,24 @@ public class SampleResolver
         }
         string fallbackFilename = sampleSetPrefix + "-" + soundName + ".wav";
         string? beatmapFilename = null;
+        string? beatmapUniversalFilename = null;
         if (layer.SampleIndex == 0)
         {
-            return (null, fallbackFilename);
+            return (null, null, fallbackFilename);
         }
         if (layer.SampleIndex == 1)
         {
             beatmapFilename = fallbackFilename;
+            beatmapUniversalFilename = soundName + ".wav";
         }
         if (layer.SampleIndex > 1)
         {
             beatmapFilename = sampleSetPrefix + "-" + soundName + layer.SampleIndex + ".wav";
+            beatmapUniversalFilename = soundName + ".wav";
         }
-        return (beatmapFilename, fallbackFilename);
+        return (beatmapFilename, beatmapUniversalFilename, fallbackFilename);
     }
-    public (string? BeatmapFilename, string FallbackFilename) GetSliderTickSampleLookup(HitSoundLayer layer)
+    public (string? BeatmapFilename, string? BeatmapUniversalFilename, string FallbackFilename) GetSliderTickSampleLookup(HitSoundLayer layer)
     {
         ArgumentNullException.ThrowIfNull(layer);
         if (layer.SampleIndex < 0)
@@ -180,19 +186,22 @@ public class SampleResolver
         }
         string fallbackFilename = sampleSetPrefix + "-slidertick.wav";
         string? beatmapFilename = null;
+        string? beatmapUniversalFilename = null;
         if (layer.SampleIndex == 0)
         {
-            return (null, fallbackFilename);
+            return (null, null, fallbackFilename);
         }
         if (layer.SampleIndex == 1)
         {
             beatmapFilename = fallbackFilename;
+            beatmapUniversalFilename = "slidertick.wav";
         }
         if (layer.SampleIndex > 1)
         {
             beatmapFilename = sampleSetPrefix + "-slidertick" + layer.SampleIndex + ".wav";
+            beatmapUniversalFilename = "slidertick.wav";
         }
-        return (beatmapFilename, fallbackFilename);
+        return (beatmapFilename, beatmapUniversalFilename, fallbackFilename);
     }
     //CUSTOM SAMPLE LOOKUP
     public string? ResolveCustomSamplePath(HitSoundLayer layer, string beatmapDirectory)
@@ -288,7 +297,7 @@ public class SampleResolver
             };
         }
 
-        (string? BeatmapFilename, string FallbackFilename) lookup;
+        (string? BeatmapFilename, string? BeatmapUniversalFilename, string FallbackFilename) lookup;
 
         switch (layer.Type)
         {
@@ -314,13 +323,17 @@ public class SampleResolver
                     "The hitsound type is not supported for sample resolution.");
         }
         string? resolvedPath = ResolveBeatmapSamplePath(lookup.BeatmapFilename, beatmapDirectory);
+        if (resolvedPath == null)
+        {
+            resolvedPath = ResolveBeatmapSamplePath(lookup.BeatmapUniversalFilename, beatmapDirectory);
+        }
         if (resolvedPath != null)
         {
             return new SampleResolutionResult
             {
                 Outcome = SampleResolutionOutcome.BeatmapSampleFound,
                 ResolvedPath = resolvedPath,
-                FallbackFilename = lookup.FallbackFilename
+                FallbackFilename = lookup.FallbackFilename,
             };
         }
         return new SampleResolutionResult

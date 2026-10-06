@@ -6,47 +6,54 @@ public class SampleResolverTests
 {
     [Theory]
     [InlineData(
-        SampleSetType.Normal,
-        HitSoundType.Normal,
-        0,
-        null,
-        "normal-hitnormal.wav")]
+    SampleSetType.Normal,
+    HitSoundType.Normal,
+    0,
+    null,
+    null,
+    "normal-hitnormal.wav")]
     [InlineData(
-        SampleSetType.Normal,
-        HitSoundType.Normal,
-        1,
-        "normal-hitnormal.wav",
-        "normal-hitnormal.wav")]
+    SampleSetType.Normal,
+    HitSoundType.Normal,
+    1,
+    "normal-hitnormal.wav",
+    "hitnormal.wav",
+    "normal-hitnormal.wav")]
     [InlineData(
-        SampleSetType.Normal,
-        HitSoundType.Normal,
-        2,
-        "normal-hitnormal2.wav",
-        "normal-hitnormal.wav")]
+    SampleSetType.Normal,
+    HitSoundType.Normal,
+    2,
+    "normal-hitnormal2.wav",
+    "hitnormal.wav",
+    "normal-hitnormal.wav")]
     [InlineData(
-        SampleSetType.Soft,
-        HitSoundType.Whistle,
-        3,
-        "soft-hitwhistle3.wav",
-        "soft-hitwhistle.wav")]
+    SampleSetType.Soft,
+    HitSoundType.Whistle,
+    3,
+    "soft-hitwhistle3.wav",
+    "hitwhistle.wav",
+    "soft-hitwhistle.wav")]
     [InlineData(
-        SampleSetType.Drum,
-        HitSoundType.Finish,
-        4,
-        "drum-hitfinish4.wav",
-        "drum-hitfinish.wav")]
+    SampleSetType.Drum,
+    HitSoundType.Finish,
+    4,
+    "drum-hitfinish4.wav",
+    "hitfinish.wav",
+    "drum-hitfinish.wav")]
     [InlineData(
-        SampleSetType.Normal,
-        HitSoundType.Clap,
-        10,
-        "normal-hitclap10.wav",
-        "normal-hitclap.wav")]
+    SampleSetType.Normal,
+    HitSoundType.Clap,
+    10,
+    "normal-hitclap10.wav",
+    "hitclap.wav",
+    "normal-hitclap.wav")]
     public void GetStandardSampleLookup_ReturnsExpectedFilenames(
-        SampleSetType sampleSet,
-        HitSoundType type,
-        int sampleIndex,
-        string? expectedBeatmapFilename,
-        string expectedFallbackFilename)
+    SampleSetType sampleSet,
+    HitSoundType type,
+    int sampleIndex,
+    string? expectedBeatmapFilename,
+    string? expectedBeatmapUniversalFilename,
+    string expectedFallbackFilename)
     {
         SampleResolver resolver = new SampleResolver();
 
@@ -59,8 +66,17 @@ public class SampleResolverTests
 
         var result = resolver.GetStandardSampleLookup(layer);
 
-        Assert.Equal(expectedBeatmapFilename, result.BeatmapFilename);
-        Assert.Equal(expectedFallbackFilename, result.FallbackFilename);
+        Assert.Equal(
+            expectedBeatmapFilename,
+            result.BeatmapFilename);
+
+        Assert.Equal(
+            expectedBeatmapUniversalFilename,
+            result.BeatmapUniversalFilename);
+
+        Assert.Equal(
+            expectedFallbackFilename,
+            result.FallbackFilename);
     }
 
     [Fact]
@@ -166,36 +182,42 @@ public class SampleResolverTests
     HitSoundType.SliderSlide,
     0,
     null,
+    null,
     "normal-sliderslide.wav")]
     [InlineData(
     SampleSetType.Normal,
     HitSoundType.SliderSlide,
     1,
     "normal-sliderslide.wav",
+    "sliderslide.wav",
     "normal-sliderslide.wav")]
     [InlineData(
     SampleSetType.Normal,
     HitSoundType.SliderSlide,
     2,
     "normal-sliderslide2.wav",
+    "sliderslide.wav",
     "normal-sliderslide.wav")]
     [InlineData(
     SampleSetType.Soft,
     HitSoundType.SliderWhistle,
     3,
     "soft-sliderwhistle3.wav",
+    "sliderwhistle.wav",
     "soft-sliderwhistle.wav")]
     [InlineData(
     SampleSetType.Drum,
     HitSoundType.SliderSlide,
     4,
     "drum-sliderslide4.wav",
+    "sliderslide.wav",
     "drum-sliderslide.wav")]
     public void GetSliderBodySampleLookup_ReturnsExpectedFilenames(
     SampleSetType sampleSet,
     HitSoundType type,
     int sampleIndex,
     string? expectedBeatmapFilename,
+    string? expectedBeatmapUniversalFilename,
     string expectedFallbackFilename)
     {
         SampleResolver resolver = new SampleResolver();
@@ -209,8 +231,17 @@ public class SampleResolverTests
 
         var result = resolver.GetSliderBodySampleLookup(layer);
 
-        Assert.Equal(expectedBeatmapFilename, result.BeatmapFilename);
-        Assert.Equal(expectedFallbackFilename, result.FallbackFilename);
+        Assert.Equal(
+            expectedBeatmapFilename,
+            result.BeatmapFilename);
+
+        Assert.Equal(
+            expectedBeatmapUniversalFilename,
+            result.BeatmapUniversalFilename);
+
+        Assert.Equal(
+            expectedFallbackFilename,
+            result.FallbackFilename);
     }
 
     [Fact]
@@ -1154,5 +1185,223 @@ public class SampleResolverTests
         Assert.Contains(
             "The hitsound type is not supported for sample resolution.",
             exception.Message);
+    }
+    [Fact]
+    public void ResolveSample_PrefersSpecificBeatmapSampleOverUniversalSample()
+    {
+        SampleResolver resolver = new SampleResolver();
+
+        string tempDirectory = Path.Combine(
+            Path.GetTempPath(),
+            Guid.NewGuid().ToString());
+
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            string specificPath =
+                Path.Combine(tempDirectory, "soft-hitclap3.wav");
+
+            string universalPath =
+                Path.Combine(tempDirectory, "hitclap.wav");
+
+            File.WriteAllBytes(specificPath, Array.Empty<byte>());
+            File.WriteAllBytes(universalPath, Array.Empty<byte>());
+
+            HitSoundLayer layer = new HitSoundLayer
+            {
+                Type = HitSoundType.Clap,
+                SampleSet = SampleSetType.Soft,
+                SampleIndex = 3
+            };
+
+            SampleResolutionResult result =
+                resolver.ResolveSample(layer, tempDirectory);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(specificPath, result.ResolvedPath);
+            Assert.Equal(
+                "soft-hitclap.wav",
+                result.FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, true);
+        }
+    }
+
+    [Fact]
+    public void ResolveSample_UsesUniversalBeatmapSampleWhenStandardSampleIsMissing()
+    {
+        SampleResolver resolver = new SampleResolver();
+
+        string tempDirectory = Path.Combine(
+            Path.GetTempPath(),
+            Guid.NewGuid().ToString());
+
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            string universalPath =
+                Path.Combine(tempDirectory, "hitwhistle.wav");
+
+            File.WriteAllBytes(universalPath, Array.Empty<byte>());
+
+            HitSoundLayer layer = new HitSoundLayer
+            {
+                Type = HitSoundType.Whistle,
+                SampleSet = SampleSetType.Soft,
+                SampleIndex = 4
+            };
+
+            SampleResolutionResult result =
+                resolver.ResolveSample(layer, tempDirectory);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(universalPath, result.ResolvedPath);
+            Assert.Equal(
+                "soft-hitwhistle.wav",
+                result.FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, true);
+        }
+    }
+
+    [Fact]
+    public void ResolveSample_UsesUniversalBeatmapSampleWhenSliderBodySampleIsMissing()
+    {
+        SampleResolver resolver = new SampleResolver();
+
+        string tempDirectory = Path.Combine(
+            Path.GetTempPath(),
+            Guid.NewGuid().ToString());
+
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            string universalPath =
+                Path.Combine(tempDirectory, "sliderwhistle.wav");
+
+            File.WriteAllBytes(universalPath, Array.Empty<byte>());
+
+            HitSoundLayer layer = new HitSoundLayer
+            {
+                Type = HitSoundType.SliderWhistle,
+                SampleSet = SampleSetType.Drum,
+                SampleIndex = 2
+            };
+
+            SampleResolutionResult result =
+                resolver.ResolveSample(layer, tempDirectory);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(universalPath, result.ResolvedPath);
+            Assert.Equal(
+                "drum-sliderwhistle.wav",
+                result.FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, true);
+        }
+    }
+
+    [Fact]
+    public void ResolveSample_UsesUniversalBeatmapSampleWhenSliderTickSampleIsMissing()
+    {
+        SampleResolver resolver = new SampleResolver();
+
+        string tempDirectory = Path.Combine(
+            Path.GetTempPath(),
+            Guid.NewGuid().ToString());
+
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            string universalPath =
+                Path.Combine(tempDirectory, "slidertick.wav");
+
+            File.WriteAllBytes(universalPath, Array.Empty<byte>());
+
+            HitSoundLayer layer = new HitSoundLayer
+            {
+                Type = HitSoundType.SliderTick,
+                SampleSet = SampleSetType.Normal,
+                SampleIndex = 2
+            };
+
+            SampleResolutionResult result =
+                resolver.ResolveSample(layer, tempDirectory);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(universalPath, result.ResolvedPath);
+            Assert.Equal(
+                "normal-slidertick.wav",
+                result.FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, true);
+        }
+    }
+
+    [Fact]
+    public void ResolveSample_DoesNotUseUniversalBeatmapSampleWhenSampleIndexIsZero()
+    {
+        SampleResolver resolver = new SampleResolver();
+
+        string tempDirectory = Path.Combine(
+            Path.GetTempPath(),
+            Guid.NewGuid().ToString());
+
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            string universalPath =
+                Path.Combine(tempDirectory, "hitnormal.wav");
+
+            File.WriteAllBytes(universalPath, Array.Empty<byte>());
+
+            HitSoundLayer layer = new HitSoundLayer
+            {
+                Type = HitSoundType.Normal,
+                SampleSet = SampleSetType.Normal,
+                SampleIndex = 0
+            };
+
+            SampleResolutionResult result =
+                resolver.ResolveSample(layer, tempDirectory);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                result.Outcome);
+
+            Assert.Null(result.ResolvedPath);
+            Assert.Equal(
+                "normal-hitnormal.wav",
+                result.FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, true);
+        }
     }
 }

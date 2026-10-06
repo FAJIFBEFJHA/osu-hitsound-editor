@@ -94,6 +94,8 @@ write signature
 
 unless the signature itself is the concept being studied.
 
+Diagnostic or temporary-tool code may be complete, but it must not be copied into `src/` as a shortcut around the learning workflow.
+
 ---
 
 ## While implementing
@@ -204,13 +206,38 @@ Prefer functional progress over premature abstraction.
 
 ## Before ending a session
 
-First verify the working state:
+Do not use a large interactive terminal `git diff` as the normal closing-review workflow.
+
+Run the repository review script:
 
 ```powershell
-dotnet test
-git status
-git diff
+.\scripts\New-SessionReview.ps1
 ```
+
+The script should create one report outside the repository containing the information needed for review, including:
+
+```text
+dotnet test result
+git status --short
+git diff --stat
+git diff --check
+unstaged tracked diff
+staged diff
+relevant untracked text-file contents
+```
+
+Keep session reports as local history rather than overwriting one file. Store them outside the repository using this structure:
+
+```text
+<repo-parent>/<repo-name>-session-reviews/YYYY-MM-DD/
+    <repo-name>-session-review_YYYY-MM-DD_HH-mm-ss.txt
+```
+
+The timestamp inside the report and the timestamp in its filename should be generated from the same captured time value. Do not add this report-history directory to the repository.
+
+If working with an AI mentor, upload the newest generated report instead of manually copying terminal output or navigating multiple per-file diffs.
+
+Review the report before updating the continuity checkpoint.
 
 Then update `docs/PROJECT_CONTEXT.md` so it records the checkpoint that is actually about to be committed:
 
@@ -223,11 +250,18 @@ NEXT TASK
 IMPORTANT / TECHNICAL DEBT
 ```
 
+Update `docs/ROADMAP.md` when stage/progress changed.
+
+Update `docs/DECISIONS.md` only when an architectural/behavioral decision became stable enough that it should not be reopened every session.
+
+Update `AI_WORKFLOW.md` / `WORKFLOW.md` only when the development process itself changed.
+
 Use descriptive roadmap stage names such as:
 
 ```text
 Hitsound Resolution
 Physical Sample Resolution
+Audio Infrastructure
 Export and Round-Trip Verification
 ```
 
@@ -235,14 +269,13 @@ Do not use `Phase N` numbering for roadmap stages.
 
 `PROJECT_CONTEXT.md` is a checkpoint, not a diary. Keep it current and focused on information needed to resume development.
 
-Review the final changes again:
+After documentation changes, run the review script again when a final complete review is needed:
 
 ```powershell
-git status
-git diff
+.\scripts\New-SessionReview.ps1
 ```
 
-If the current functional or documentation checkpoint is complete:
+If the current functional/documentation checkpoint is complete and the report is clean:
 
 ```powershell
 git add ...
@@ -292,13 +325,16 @@ What data produces that value?
 Can I test that transformation independently?
 ```
 
-If an experiment becomes messy:
+If an experiment becomes messy, use the smallest useful checks first:
 
 ```powershell
-git status
-git diff
+git status --short
+git diff --stat
+git diff --check
 dotnet test
 ```
+
+If a complete diff review is required, generate the session-review file instead of navigating a large terminal diff.
 
 Return to the last known-good checkpoint when necessary.
 

@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT
 
-Last updated: 2026-10-05
+Last updated: 2026-10-06
 
 ## Project
 
@@ -18,27 +18,37 @@ The repository is public.
 
 ## Current stage
 
-**Physical Sample Resolution**
+**Audio Infrastructure**
 
 Current test status:
 
 ```text
-182/182 passing
+197/197 passing
 ```
 
-Hitsound Resolution was completed before starting Physical Sample Resolution.
+Beatmap Parsing and Base Model, Hitsound Resolution, and the current Physical Sample Resolution boundary are complete.
 
 ## Current objective
 
-Close the explicit-filename compatibility work with reproducible fixtures and regression coverage, then verify the remaining unresolved legacy slider inheritance case before continuing Physical Sample Resolution.
+Continue production Audio Infrastructure without copying diagnostic spike implementations into `src/`.
 
-The canonical compatibility policy is implemented: legacy `.osu` explicit custom filenames resolve to the custom sample only. Slider trailing `hitSample.index`, `hitSample.volume`, and `hitSample.filename` are preserved as source data but do not override legacy slider edge/body/tick sample resolution.
+The current production audio boundary can:
+
+- open supported physical audio files
+- decode WAV/MP3 through `AudioFileReader`
+- decode OGG through `VorbisWaveReader`
+- convert decoded audio to `ISampleProvider`
+- normalize mono to stereo
+- normalize multichannel audio to stereo by preserving input channels 0 and 1
+- resample to a caller-provided target sample rate
+
+The next production objective is basic playback using the NAudio/WASAPI behavior already validated by the diagnostic spike, while the author writes the production implementation from the documented responsibility/data flow rather than copying spike code.
 
 ## Current implementation checkpoint
 
 ### Logical hitsound resolution
 
-The logical layer is already implemented and covered by the previous Hitsound Resolution checkpoint.
+The logical layer is complete and remains the source of audible hitsound intent.
 
 Relevant behavior includes:
 
@@ -52,52 +62,37 @@ Relevant behavior includes:
 - slider body `SliderWhistle`
 - slider tick timing
 - slider tick hitsounds
-- custom filename representation
+- explicit custom filename representation
 
-Relevant `Beatmap.cs` organization:
+Slider edge, body, and tick responsibilities remain separate. There is no `GetAllSliderHitSounds()` API.
+
+### Legacy slider edge inheritance
+
+The remaining `edgeSets = 0:0` question has been resolved.
+
+Canonical behavior:
 
 ```text
-PROPERTIES
+explicit slider edge NormalSet = 0
+    -> unspecified
+    -> inherit from the sample timing point at the edge time
 
-RESOLUTION HELPERS
-    GetSampleTimingPoint
+explicit slider edge AdditionSet = 0
+    -> inherit the resolved effective NormalSet
 
-TIMING
-    GetActiveTimingPoint
-    GetActiveUninheritedTimingPoint
-    GetActiveInheritedTimingPoint
-    GetEffectiveSliderVelocityMultiplier
-
-SLIDER TIMING
-    GetSliderSpanDuration
-    GetSliderDuration
-    GetSliderEdgeTime
-    GetSliderTickDistance
-    GetSliderTickTimes
-
-SAMPLE SETS
-
-HITOBJECT - EFFECTIVE VALUES
-
-SLIDER EDGE - EFFECTIVE VALUES
-
-HITSOUND TYPES
-
-HITSOUND LAYERS
-    GetHitSoundLayers(HitObject)
-    GetHitSoundLayers(SliderEdge, HitSample, double time)
-    GetSliderEdgeHitSoundLayers
-    GetSliderBodyHitSoundLayers
-    GetSliderTickHitSoundLayers
+edge time before the first timing point
+    -> use the first timing point in the beatmap
 ```
 
-Keep slider edge, body, and tick responsibilities separate for now. There is no `GetAllSliderHitSounds()` API.
+The slider-level trailing `HitSample.NormalSet` / `HitSample.AdditionSet` do not override an explicit edge `0:0` in this legacy path.
+
+`GetEffectiveNormalSet(SliderEdge sliderEdge, double time)` now uses `GetSampleTimingPoint(time)` so pre-first-timing-point behavior matches the canonical legacy sample-point fallback.
 
 ### Physical sample resolution boundary
 
-`SampleResolver` now owns physical osu! sample lookup behavior.
+`SampleResolver` owns physical osu! sample lookup behavior.
 
-Implemented methods:
+Implemented methods include:
 
 ```text
 GetStandardSampleLookup(HitSoundLayer layer)
@@ -108,56 +103,51 @@ ResolveBeatmapSamplePath(string? beatmapFilename, string beatmapDirectory)
 ResolveSample(HitSoundLayer layer, string beatmapDirectory)
 ```
 
-The existing lookup methods intentionally return:
+Standard/slider lookup methods now return:
 
 ```text
 BeatmapFilename
+BeatmapUniversalFilename
 FallbackFilename
 ```
 
-rather than collapsing the lookup into one filename.
+### Physical sample lookup order
 
-### Standard sample name mappings
-
-Current mappings:
+For `SampleIndex >= 1`, the deterministic beatmap lookup chain is:
 
 ```text
-Normal          -> hitnormal
-Whistle         -> hitwhistle
-Finish          -> hitfinish
-Clap            -> hitclap
-SliderSlide     -> sliderslide
-SliderWhistle   -> sliderwhistle
-SliderTick      -> slidertick
+specific banked beatmap sample
+    -> universal bankless beatmap sample
+    -> external/user-skin fallback required
 ```
 
-### SampleIndex semantics
-
-Physical resolution preserves the distinction between `SampleIndex = 0` and `SampleIndex = 1`.
-
-Current rule:
+Examples of universal bankless names:
 
 ```text
-SampleIndex = 0
-    BeatmapFilename = null
-    fallback remains available
-
-SampleIndex = 1
-    BeatmapFilename = unindexed standard filename
-    fallback = same unindexed standard filename
-
-SampleIndex > 1
-    BeatmapFilename = indexed standard filename
-    fallback = unindexed standard filename
+hitnormal.wav
+hitwhistle.wav
+hitfinish.wav
+hitclap.wav
+sliderslide.wav
+sliderwhistle.wav
+slidertick.wav
 ```
 
-Therefore, a matching unindexed file in the beatmap directory must not be used when the logical layer has `SampleIndex = 0`.
+For `SampleIndex = 0`:
 
-### Beatmap sample extension lookup
+```text
+BeatmapFilename = null
+BeatmapUniversalFilename = null
+external fallback remains available
+```
 
-Verified against the official `ppy/osu` implementation.
+Therefore, `SampleIndex = 0` must not accidentally consume either banked or universal beatmap samples.
 
-Legacy sample lookup order is:
+For a custom index greater than 1, an unindexed banked beatmap filename such as `normal-hitnormal.wav` is not a beatmap fallback for `normal-hitnormal2.wav`; the universal bankless candidate is used instead.
+
+### Beatmap sample extensions
+
+Legacy beatmap sample extension lookup remains:
 
 ```text
 .wav
@@ -165,34 +155,11 @@ Legacy sample lookup order is:
 .ogg
 ```
 
-`ResolveBeatmapSamplePath(...)` checks those extensions in that order and returns the first physical path found.
-
-### Explicit custom filename lookup
-
-`ResolveCustomSamplePath(...)` treats an explicit filename separately from standard sample lookup.
-
-Current result:
-
-```text
-file exists
-    -> full physical path
-
-file does not exist
-    -> null
-```
-
-A missing explicit custom filename is not treated as ordinary external fallback.
+The first existing extension wins.
 
 ### Physical resolution result model
 
-Implemented:
-
-```text
-SampleResolutionOutcome
-SampleResolutionResult
-```
-
-`SampleResolutionOutcome` values:
+The existing outcomes remain sufficient:
 
 ```text
 BeatmapSampleFound
@@ -201,183 +168,146 @@ CustomSampleFound
 CustomSampleMissing
 ```
 
-`SampleResolutionResult` carries:
+A universal bankless beatmap sample still produces `BeatmapSampleFound`; no extra outcome was introduced.
+
+### Deferred Physical Sample Resolution work
+
+The following are deliberately deferred rather than blockers for Audio Infrastructure:
+
+- stable logical `SampleId`
+- loading additional sample metadata before a concrete consumer requires it
+- broader refactoring of duplicated standard/body/tick lookup code
+
+Do not introduce these merely to make the current boundary look more abstract.
+
+## Audio Infrastructure checkpoint
+
+### Platform and dependencies
+
+Production and test projects target:
 
 ```text
-Outcome
-ResolvedPath
-FallbackFilename
+net10.0-windows
 ```
 
-Interpretation:
+Current audio dependencies:
 
 ```text
-BeatmapSampleFound
-    ResolvedPath = physical beatmap sample path
-    FallbackFilename = standard fallback filename
-
-ExternalFallbackRequired
-    ResolvedPath = null
-    FallbackFilename = standard fallback filename
-
-CustomSampleFound
-    ResolvedPath = explicit custom file path
-    FallbackFilename = null
-
-CustomSampleMissing
-    ResolvedPath = null
-    FallbackFilename = null
+NAudio 3.1.0
+NAudio.Vorbis 3.0.0
 ```
 
-### Integrated resolution
+`NAudio.SoundFile` / libsndfile is not currently required.
 
-`ResolveSample(...)` coordinates the previous methods.
+### Diagnostic spike findings
 
-Flow:
+The temporary `tools/AudioProbe` spike was used only to answer infrastructure questions and has been removed.
+
+Validated experimentally before removal:
+
+- WAV, MP3, and OGG decoding
+- duration and decoder seek
+- `WasapiPlayer` basic play/pause/resume/stop
+- seek during playback
+- simultaneous hitsound mixing
+- mono/stereo/sample-rate normalization
+- multichannel handling
+- per-layer linear volume with `VolumeSampleProvider`
+- low-latency WASAPI behavior
+- rendered output position as the playback timeline basis
+
+Spike code is evidence, not production implementation. It must not be copied into `src/`; production code is reconstructed by the author through the normal learning workflow.
+
+### Current production class
+
+`AudioPlaybackEngine` currently contains:
 
 ```text
-HitSoundLayer
-    -> Custom
-        -> ResolveCustomSamplePath
-        -> CustomSampleFound / CustomSampleMissing
-
-    -> Normal / Whistle / Finish / Clap
-        -> GetStandardSampleLookup
-
-    -> SliderSlide / SliderWhistle
-        -> GetSliderBodySampleLookup
-
-    -> SliderTick
-        -> GetSliderTickSampleLookup
-
-    standard/slider lookup
-        -> ResolveBeatmapSamplePath
-        -> BeatmapSampleFound / ExternalFallbackRequired
+OpenAudioFile(string filePath) -> WaveStream
+NormalizeForMixer(WaveStream reader, int targetSampleRate) -> ISampleProvider
 ```
 
-## Test progression for Physical Sample Resolution
-
-Known checkpoints from the current development session:
+`OpenAudioFile(...)`:
 
 ```text
-100/100  Hitsound Resolution baseline before physical lookup work
-114/114  standard sample lookup
-126/126  slider body sample lookup
-138/138  slider tick sample lookup
-148/148  explicit custom sample path lookup
-159/159  beatmap sample extension lookup
-168/168  integrated physical sample resolution
-173/173  explicit-filename hitobject compatibility
-176/176  remaining spinner/slider compatibility regression setup
-182/182  legacy slider sample-source semantics and documented fallback coverage
+missing file
+    -> FileNotFoundException
+
+.wav / .mp3
+    -> AudioFileReader
+
+.ogg
+    -> VorbisWaveReader
+
+other extension
+    -> NotSupportedException
 ```
 
-Treat the actual test suite as the implementation truth if this list ever becomes stale.
-
-## osu!stable vs osu!lazer explicit filename compatibility
-
-Two reproducible fixtures are preserved under test data:
+`NormalizeForMixer(...)`:
 
 ```text
-TestData/ExplicitFilenameCompatibility/
-TestData/ExplicitFilenameRemainingComponents/
+WaveStream
+    -> ToSampleProvider()
+
+mono
+    -> MonoToStereoSampleProvider
+
+more than 2 channels
+    -> MultiplexingSampleProvider
+    -> input 0 -> output 0
+    -> input 1 -> output 1
+
+sample rate differs from target
+    -> WdlResamplingSampleProvider
+
+return current ISampleProvider
 ```
 
-The first fixture records seven hitobject cases covering explicit filename behavior and control cases.
+The target sample rate is intentionally provided by the caller. Production playback must not hard-code `44100 Hz`; the eventual playback path should normalize to the active device mix sample rate.
 
-Manual playback confirmed:
+## Test progression
+
+Recent checkpoints:
 
 ```text
-osu!stable
-    explicit filename -> custom sample only
-
-osu!lazer
-    explicit filename -> custom sample plus applicable additions
+182/182  legacy slider sample-source semantics and fallback coverage
+185/185  edgeSets = 0:0 / pre-first-timing-point inheritance coverage
+190/190  universal bankless beatmap sample fallback coverage
+193/193  audio file opening/error coverage
+197/197  audio format normalization coverage
 ```
 
-The project deliberately uses the legacy/osu!stable custom-only result as its canonical logical model.
+Treat the actual source and test suite as the implementation truth if this list becomes stale.
 
-`GetHitSoundLayers(HitObject)` now returns only `Custom` when `HitSample.Filename` is present while preserving the parsed source fields.
+## Workflow tooling
 
-The second fixture covers spinner and slider behavior. Manual testing plus the official `ppy/osu` legacy parser confirmed that slider trailing `hitSample` handling is different from ordinary hitobjects:
+A repository `.editorconfig` remains present for naming/style alignment.
+
+Session closing review is automated through:
 
 ```text
-slider HitSample.NormalSet
-slider HitSample.AdditionSet
-    -> remain relevant to slider sample-bank resolution
-
-slider HitSample.Index
-slider HitSample.Volume
-slider HitSample.Filename
-    -> do not override legacy slider edge/body/tick sample resolution
+scripts/New-SessionReview.ps1
 ```
 
-Current implemented data flow:
+The script runs the relevant verification commands and writes one review report outside the repository. The report is uploaded/reviewed instead of asking the user to navigate a large terminal `git diff`.
 
-```text
-slider edges
-    sample sets -> SliderEdge values
-    SampleIndex / Volume -> sample timing point at edge time
-    explicit slider HitSample.Filename -> ignored for edge generation
+## Important / technical debt
 
-slider body
-    sample sets -> slider HitSample NormalSet / AdditionSet
-    SampleIndex / Volume -> sample timing point at slider start
+Do not mix these into the next audio step unless they become blockers:
 
-slider ticks
-    sample set -> slider HitSample NormalSet
-    SampleIndex / Volume -> sample timing point at slider start
-```
-
-`GetSampleTimingPoint(double time)` resolves the sample timing point used for legacy sample values:
-
-```text
-active timing point at or before time
-    -> use it
-
-time is before every timing point
-    -> use the first timing point in the map
-
-no timing points exist
-    -> caller uses documented defaults
-       SampleIndex = 0
-       Volume = 100
-```
-
-The lazer-specific spinner traversal sound observed during manual testing is intentionally deferred. It is not part of the current canonical legacy model.
-
-### Remaining compatibility question
-
-The interaction between slider `edgeSets = 0:0` and the slider-level `NormalSet` / `AdditionSet` still needs explicit verification against official behavior or a reproducible beatmap before changing code.
-
-Do not guess this rule.
-
-## Tooling checkpoint
-
-A repository `.editorconfig` is present locally to align VS Code/C# naming diagnostics and suggestions with the project's established naming conventions.
-
-## Refactoring status
-
-There is visible duplication among standard, slider-body, and slider-tick filename lookup methods.
-
-Do not refactor it yet.
-
-`GetHitSoundLayers(SliderEdge, HitSample, double time)` currently retains the `HitSample` parameter even though legacy slider edge resolution no longer uses its `Index`, `Volume`, or `Filename`. Revisit that public signature only during a deliberate boundary/API review; do not mix it into the next behavior investigation.
-
-## Deferred work
-
-Do not mix these into the current compatibility investigation unless they become blockers.
-
-- Define stable logical `SampleId` only after physical-resolution semantics are trustworthy.
-- Audio decoding/playback belongs to the later Audio Infrastructure stage.
-- Export and round-trip equivalence come before global optimization.
-- Do not introduce CP-SAT or another global optimizer yet.
-- Use `CultureInfo.InvariantCulture` for `.osu` numeric parsing when parser robustness work resumes.
-- Improve malformed/empty parser field handling later.
+- define stable logical `SampleId` only when a concrete identity consumer requires it
+- load only audio/sample metadata that a concrete editor/playback requirement needs
+- revisit `GetHitSoundLayers(SliderEdge, HitSample, double time)` signature only during a deliberate API review
+- use `CultureInfo.InvariantCulture` consistently when parser robustness work resumes
+- improve malformed/empty parser-field handling later
+- keep the lazer-specific spinner traversal sound deferred from the canonical legacy model
+- do not introduce global optimization before deterministic export/reload equivalence exists
 
 ## Exact next task
 
-Verify the legacy semantics of slider `edgeSets = 0:0`, specifically whether zero-valued edge sample sets inherit from the slider-level `NormalSet` / `AdditionSet` or directly from the active sample timing point. Use official osu! documentation / official `ppy/osu` implementation and, if needed, a reproducible beatmap fixture before changing production code.
+Define and implement the smallest production basic-playback responsibility in `AudioPlaybackEngine` using `WasapiPlayer`, with the output format driven by the playback device mix format and existing `NormalizeForMixer(...)` used as the format boundary.
+
+Do not copy the removed `AudioProbe` implementation. Re-derive the production method through the normal method-responsibility workflow, then add tests where hardware-independent verification is possible and use a focused manual playback check for device-dependent behavior.
 
 ## Source-of-truth order
 

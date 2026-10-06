@@ -9,7 +9,7 @@ Use this file as instructions for any AI assistant helping with `osu-hitsound-ed
 
 ## Primary learning rule
 
-- The user writes production/project code.
+- The user writes production/project code under `src/`.
 - Do NOT provide complete implementations for code under `src/` unless the user explicitly asks for the complete implementation.
 - Complete code MAY be provided for:
   - tests
@@ -18,6 +18,7 @@ Use this file as instructions for any AI assistant helping with `osu-hitsound-ed
   - diagnostics
   - temporary scripts/tools
   - exception-handling expressions and exception constructors/messages
+- Complete diagnostic/spike code provided by AI is not a production implementation. Do not copy it into `src/` as a shortcut. Re-derive the production responsibility through the normal learning workflow and have the user write it unless the user explicitly asks for complete production code.
 
 ## New methods
 
@@ -182,6 +183,45 @@ Suggest/prepare a commit when:
 - user is ending the session
 - user explicitly asks for one
 
+### Session closing review
+
+Do not ask the user to inspect, navigate, or paste a large terminal `git diff`, and do not normally ask for a sequence of per-file `git diff` commands.
+
+The repository provides:
+
+```text
+scripts/New-SessionReview.ps1
+```
+
+When ending or pausing a development session:
+
+1. Ask the user to run:
+
+   ```powershell
+   .\scripts\New-SessionReview.ps1
+   ```
+
+2. The script should run the relevant verification commands, including the test suite, Git status, diff summary/checks, tracked diffs, staged diffs, and relevant untracked text-file content.
+
+3. The script must store reports outside the repository so they never affect `git status`. Reports are a local development history, not repository artifacts.
+
+4. Reports must not overwrite previous runs. Store them in a sibling history directory grouped by date, with the generation timestamp in the filename:
+
+   ```text
+   <repo-parent>/<repo-name>-session-reviews/YYYY-MM-DD/
+       <repo-name>-session-review_YYYY-MM-DD_HH-mm-ss.txt
+   ```
+
+5. The timestamp written inside the report and the timestamp used in the filename should come from the same captured `DateTime` value.
+
+6. Ask the user to upload the newest generated session-review file.
+
+7. Review that single file before updating continuity documents or preparing the commit.
+
+8. Do not make the user manually copy terminal output when the review file contains the same information.
+
+9. After continuity documents are updated, run `scripts/New-SessionReview.ps1` again when a final complete review is needed before commit. Keep the previous report as part of the local history.
+
 ## Project-specific rules
 
 - Prefer VS Code while sufficient.
@@ -223,8 +263,7 @@ Rules:
 - Edit continuity documents only in `docs/` inside the local repository.
 - Google Drive is a read-only mirror for AI continuity.
 - The AI must not modify the Google Drive copies directly.
-- After committing and pushing documentation changes, synchronize the local
-  documents to Google Drive.
+- After committing and pushing documentation changes, synchronize the local documents to Google Drive.
 - Because the repository is public, use the current repository state as the primary continuity source when direct GitHub access is available.
 - Google Drive remains a secondary continuity mirror and fallback when direct repository access is unavailable.
 - Project snapshots of Drive files may be stale and must not be used to override or diagnose the current repository state.
@@ -243,17 +282,13 @@ Rules:
 When the user starts or resumes a development session:
 
 1. Read `docs/PROJECT_CONTEXT.md`.
-
 2. Read the relevant part of `docs/ROADMAP.md`.
-
 3. Read `docs/DECISIONS.md` if the next task involves architecture or design.
-
 4. Confirm:
    - current stage
    - expected test count
    - last completed functionality
    - exact next task
-
 5. Ask the user to run, or verify the results of:
 
    ```powershell
@@ -263,72 +298,30 @@ When the user starts or resumes a development session:
    ```
 
 6. Compare the actual test result with the count recorded in `PROJECT_CONTEXT.md`.
-
 7. If the counts differ:
    - do not guess why
    - inspect the current source and tests before continuing
    - treat the actual code and tests as the source of truth
    - update `PROJECT_CONTEXT.md` after the discrepancy is understood
-
 8. Restate the next task in one short sentence.
-
-9. If a new method is required, always use:
-
-   ```text
-   SECCIÓN:
-       Where the method belongs.
-
-   PERTENECE A:
-       Class that owns the method.
-
-   RECIBE:
-       Parameters and their purpose.
-
-   DEVUELVE:
-       Return type and meaning.
-
-   UTILIZA:
-       Existing methods, properties, classes, or data used.
-
-   FLUJO:
-       Short pseudocode directly translatable to code.
-   ```
-
-10. Keep `FLUJO` concise. Example:
-
-    ```text
-    FLUJO:
-        si Slides <= 0
-            InvalidOperationException
-
-        si edgeIndex < 0 o edgeIndex > Slides
-            ArgumentOutOfRangeException
-
-        calcular:
-            slider.Time
-            + GetSliderSpanDuration(slider) * edgeIndex
-
-        devolver el resultado
-    ```
-
-11. Do not ask the user to implement only the method signature first. Explain the complete responsibility and ask the user to implement the complete method.
-
-12. Do not start unrelated refactors or technical-debt work unless it blocks the current task.
-
-13. Do not begin implementation until the existing test suite is passing or the reason for an existing failure is understood.
+9. If a new method is required, use the required method format.
+10. Do not start unrelated refactors or technical-debt work unless it blocks the current task.
+11. Do not begin implementation until the existing test suite is passing or the reason for an existing failure is understood.
 
 ## Session closing protocol
 
-When the user says they are stopping, pausing, going to sleep,
-or ending the session:
+When the user says they are stopping, pausing, going to sleep, or ending the session:
 
-1. State the current stage and exact passing test count.
-2. Summarize only the functionality completed in this session.
-3. Identify which documentation files must be updated.
-4. State any unresolved question or technical debt discovered.
-5. Give exactly one concrete next task.
-6. Provide the appropriate Git commit message and push commands.
-7. Do not start a new feature.
+1. State the current stage and exact passing test count known from the current work.
+2. Ask the user to run `scripts/New-SessionReview.ps1` rather than manually running/copying a large `git diff` workflow.
+3. Review the uploaded session-review report.
+4. Summarize only the functionality completed in this session.
+5. Identify and update the continuity/documentation files required by the actual changes.
+6. State unresolved questions or technical debt without starting new work.
+7. Give exactly one concrete next task.
+8. Run/review the session-report script again after documentation changes if needed for the final checkpoint.
+9. Provide the appropriate Git commit message and push commands only after tests and final review are clean.
+10. Do not start a new feature.
 
 ## Current checkpoint
 

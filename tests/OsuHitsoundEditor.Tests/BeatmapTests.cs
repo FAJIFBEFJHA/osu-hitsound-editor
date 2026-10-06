@@ -2230,4 +2230,120 @@ public class BeatmapTests
         Assert.Equal(0, layer.SampleIndex);
         Assert.Equal(100, layer.Volume);
     }
+    [Fact]
+    public void GetEffectiveNormalSet_SliderEdgeBeforeFirstTimingPoint_UsesFirstTimingPointSet()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 3000,
+            SampleSet = 2
+        });
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 5000,
+            SampleSet = 3
+        });
+
+        SliderEdge sliderEdge = new SliderEdge
+        {
+            NormalSet = 0
+        };
+
+        // Act
+        int result = beatmap.GetEffectiveNormalSet(sliderEdge, 1000);
+
+        // Assert
+        Assert.Equal(2, result);
+    }
+
+    [Fact]
+    public void GetEffectiveAdditionSet_SliderEdgeBeforeFirstTimingPoint_UsesFirstTimingPointNormalSet()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 3000,
+            SampleSet = 2
+        });
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 5000,
+            SampleSet = 3
+        });
+
+        SliderEdge sliderEdge = new SliderEdge
+        {
+            NormalSet = 0,
+            AdditionSet = 0
+        };
+
+        // Act
+        int result = beatmap.GetEffectiveAdditionSet(sliderEdge, 1000);
+
+        // Assert
+        Assert.Equal(2, result);
+    }
+
+    [Fact]
+    public void GetHitSoundLayers_SliderEdgeZeroSetsBeforeFirstTimingPoint_UsesFirstTimingPointSet()
+    {
+        // Arrange
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 3000,
+            SampleSet = 2,
+            SampleIndex = 4,
+            Volume = 70
+        });
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 5000,
+            SampleSet = 3,
+            SampleIndex = 6,
+            Volume = 60
+        });
+
+        SliderEdge sliderEdge = new SliderEdge
+        {
+            HitSound = 8,
+            NormalSet = 0,
+            AdditionSet = 0
+        };
+
+        HitSample hitSample = new HitSample
+        {
+            NormalSet = 3,
+            AdditionSet = 3,
+            Index = 9,
+            Volume = 20,
+            Filename = "custom.wav"
+        };
+
+        // Act
+        List<HitSoundLayer> layers =
+            beatmap.GetHitSoundLayers(sliderEdge, hitSample, 1000);
+
+        // Assert
+        Assert.Equal(2, layers.Count);
+
+        Assert.Equal(HitSoundType.Normal, layers[0].Type);
+        Assert.Equal(SampleSetType.Soft, layers[0].SampleSet);
+        Assert.Equal(4, layers[0].SampleIndex);
+        Assert.Equal(70, layers[0].Volume);
+
+        Assert.Equal(HitSoundType.Clap, layers[1].Type);
+        Assert.Equal(SampleSetType.Soft, layers[1].SampleSet);
+        Assert.Equal(4, layers[1].SampleIndex);
+        Assert.Equal(70, layers[1].Volume);
+    }
 }

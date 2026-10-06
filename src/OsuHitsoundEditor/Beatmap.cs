@@ -297,8 +297,8 @@ public class Beatmap
     //SLIDER EDGE — EFFECTIVE VALUES
     public int GetEffectiveNormalSet(SliderEdge sliderEdge, double time)
     {
-        TimingPoint? activePoint = GetActiveTimingPoint(time);
-        return ResolveInheritedValue(sliderEdge.NormalSet, activePoint?.SampleSet);
+        TimingPoint? sampleTimingPoint = GetSampleTimingPoint(time);
+        return ResolveInheritedValue(sliderEdge.NormalSet, sampleTimingPoint?.SampleSet);
     }
     public int GetEffectiveAdditionSet(SliderEdge sliderEdge, double time)
     {

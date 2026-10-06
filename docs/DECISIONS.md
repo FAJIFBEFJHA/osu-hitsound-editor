@@ -19,10 +19,12 @@ AI may:
 - provide Git commands
 - provide configuration
 - provide diagnostics
-- provide temporary tools/scripts
+- provide temporary scripts/tools
 - provide complete exception-handling expressions/messages
 
-**Reason:** The project is also a C#/.NET learning project.
+Complete code created by AI for a diagnostic spike, temporary tool, or experiment is evidence used to learn/validate behavior. It must not be copied into `src/` as production implementation merely because it already exists. Production behavior is re-derived through the normal learning workflow and written by the author unless the author explicitly asks for a complete production implementation.
+
+**Reason:** The project is also a C#/.NET learning project. Allowing diagnostic code to bypass the production-code rule would defeat the learning goal even if the diagnostic code is technically correct.
 
 ---
 
@@ -232,12 +234,11 @@ The current osu!lazer behavior, where an explicit custom sample can coexist with
 
 Do not introduce a stable/lazer compatibility mode unless a concrete consumer later requires client-specific playback or export behavior.
 
-Before changing `GetHitSoundLayers(...)`, preserve or recreate a reproducible explicit-filename fixture and record its input cases explicitly.
-
 **Reason:** The documented legacy format semantics and manual osu!stable testing agree on custom-only playback for explicit filenames, while manual osu!lazer testing confirms a real client divergence. Choosing the legacy/stable semantics gives the project one deterministic logical model for parse -> logical representation -> export -> reload -> equivalence without prematurely introducing client-target abstractions.
+
 ---
 
-## D021 â€” Legacy slider trailing hitSample fields have limited scope
+## D021 — Legacy slider trailing hitSample fields have limited scope
 
 **Decision:** For legacy `.osu` sliders, preserve the trailing `hitSample` source fields but do not treat all of them as ordinary slider-wide overrides.
 
@@ -246,7 +247,7 @@ Current canonical behavior:
 ```text
 HitSample.NormalSet
 HitSample.AdditionSet
-    -> participate in slider sample-bank resolution
+    -> participate in slider body/tick sample-bank resolution
 
 HitSample.Index
 HitSample.Volume
@@ -257,8 +258,14 @@ HitSample.Filename
 For slider edges:
 
 ```text
-sample sets
-    -> edge-specific values
+explicit SliderEdge.NormalSet / AdditionSet
+    -> edge-specific sample-bank values
+
+edge NormalSet = 0
+    -> inherit from the sample timing point at the edge time
+
+edge AdditionSet = 0
+    -> inherit the resolved effective NormalSet
 
 SampleIndex / Volume
     -> sample timing point at the edge's real time
@@ -274,8 +281,104 @@ SampleIndex / Volume
     -> sample timing point at slider start
 ```
 
-When resolving sample timing values before the first timing point, use the first timing point in the map. If the beatmap contains no timing points, use the documented/default legacy values `SampleIndex = 0` and `Volume = 100`.
+When a required sample timing value is queried before the first timing point, use the first timing point in the map. If the beatmap contains no timing points, use the documented/default legacy values `SampleIndex = 0` and `Volume = 100` where applicable.
 
-The unresolved `edgeSets = 0:0` inheritance rule is intentionally not specified by this decision until it is verified from official evidence or a reproducible fixture.
+**Reason:** Official legacy behavior treats an explicit edge bank value of `0` as unspecified and resolves it through the sample control point at the edge time. Slider trailing sample-bank fields remain relevant to body/tick resolution but do not override explicit edge `0:0` inheritance.
 
-**Reason:** The official legacy parser applies only sample-bank fields from a slider's trailing `hitSample`, while manual stable/lazer fixtures confirm that an explicit slider filename does not become an ordinary edge custom sample. Keeping source preservation separate from logical applicability prevents parser data loss without inventing unsupported playback semantics.
+---
+
+## D022 — Universal bankless beatmap samples are a physical fallback for SampleIndex >= 1
+
+**Decision:** For standard, slider-body, and slider-tick sample lookup with `SampleIndex >= 1`, resolve physical beatmap candidates in this order:
+
+```text
+specific banked beatmap sample
+-> universal bankless beatmap sample
+-> external/user-skin fallback
+```
+
+Examples of universal bankless beatmap names include:
+
+```text
+hitnormal.wav
+hitwhistle.wav
+hitfinish.wav
+hitclap.wav
+sliderslide.wav
+sliderwhistle.wav
+slidertick.wav
+```
+
+For `SampleIndex = 0`, neither the banked nor universal beatmap candidate is used.
+
+A universal beatmap sample still produces `BeatmapSampleFound`; it does not require a new resolution outcome.
+
+**Reason:** This preserves the legacy lookup semantics verified against the official implementation while keeping physical resolution outcomes focused on where the sample was found rather than which beatmap filename tier matched.
+
+---
+
+## D023 — NAudio is the selected Windows audio infrastructure
+
+**Decision:** Use:
+
+```text
+NAudio 3.1.0
+NAudio.Vorbis 3.0.0
+```
+
+for Windows audio infrastructure.
+
+Production and test projects target:
+
+```text
+net10.0-windows
+```
+
+Use `WasapiPlayer` rather than obsolete `WasapiOut` for production WASAPI playback.
+
+Do not add `NAudio.SoundFile` / libsndfile unless a concrete requirement appears.
+
+**Reason:** NAudio provides the required Windows playback, mixing, sample-provider, decoder, and WASAPI functionality without replacing the project's core osu! domain work. The diagnostic spike validated the required formats and playback behavior on the target platform.
+
+---
+
+## D024 — Playback inputs normalize to stereo and the device mix sample rate
+
+**Decision:** The production audio pipeline uses float `ISampleProvider` data and normalizes playback inputs as follows:
+
+```text
+mono
+    -> duplicate to stereo
+
+stereo
+    -> preserve
+
+more than 2 channels
+    -> preserve input channels 0 and 1
+    -> discard additional channels
+
+sample rate
+    -> resample to the active output device mix sample rate
+```
+
+Do not hard-code `44100 Hz` as the production mixer/output sample rate.
+
+**Reason:** The low-latency WASAPI spike showed that IAudioClient3 low-latency mode requires the source rate to match the device engine mix rate. The target device in the spike used `48000 Hz`, and resampling to that rate allowed low-latency mode to activate. Preserving the first two channels also matches the compatibility behavior investigated for osu!'s BASS-based mixer path more closely than averaging all channels.
+
+---
+
+## D025 — Decoder position is not the editor playback clock
+
+**Decision:** Do not use decoder `CurrentTime` as the authoritative editor playhead while audio is playing.
+
+For WASAPI playback, the timeline model is based on rendered output position:
+
+```text
+timeline position
+    = timeline base after the most recent seek
+    + rendered device position
+```
+
+A seek resets/restarts the output clock and updates the timeline base to the requested target position.
+
+**Reason:** The diagnostic spike showed that decoder position runs ahead of audible/rendered playback because of buffering, while `WasapiPlayer.GetPosition()` tracks frames rendered by the device. After pause drains the existing padding, source/rendered positions converge; after seek, a timeline base plus rendered position reconstructs the intended editor time.

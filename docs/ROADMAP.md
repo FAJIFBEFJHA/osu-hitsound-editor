@@ -64,30 +64,21 @@ Completed:
 - [x] Add boundary and regression coverage
 - [x] Run full hitsound-resolution regression suite
 
-### API decision
+A combined `GetAllSliderHitSounds()`-style API remains intentionally deferred until a concrete consumer requires it.
 
-A combined `GetAllSliderHitSounds()`-style API is intentionally deferred.
-
-The current slider responsibilities remain separate because head/repeat/tail events, continuous body sounds, and ticks have different timing and behavior. A combined event API should only be introduced when the timeline or another concrete consumer requires an event abstraction containing the necessary timing and hitsound information.
-
-The Hitsound Resolution baseline was `100/100` tests beforhysical Sample Resolution began.
+The Hitsound Resolution baseline was `100/100` tests before Physical Sample Resolution began.
 
 ---
 
-## Public repository milestone
+## Public Repository Milestone
 
 **Status: COMPLETE**
 
-Completed before/currently in Physical Sample Resolution:
-
-- [x] All tests passed at publication checkpoint
-- [x] Review/remove local-only paths
-- [x] Review secrets
+- [x] Publication-readiness review
+- [x] Review/remove local-only paths and secrets
 - [x] Review redistributed content
 - [x] Verify `.gitignore`
-- [x] Fix known naming/typo issues found during readiness work
-- [x] Review README
-- [x] Keep AI-mentorship disclosure
+- [x] Review README and AI-mentorship disclosure
 - [x] Add license
 - [x] Publish repository
 
@@ -101,9 +92,9 @@ https://github.com/FAJIFBEFJHA/osu-hitsound-editor
 
 ## Physical Sample Resolution
 
-**Status: IN PROGRESS**
+**Status: COMPLETE AT CURRENT BOUNDARY**
 
-Current full-suite checkpoint: **182/182 tests passing**
+Latest Physical Sample Resolution checkpoint before Audio Infrastructure: **190/190 tests passing**
 
 Completed:
 
@@ -120,50 +111,82 @@ Completed:
 - [x] Distinguish explicit custom sample found vs missing
 - [x] Integrate lookup through `ResolveSample(...)`
 - [x] Add physical sample-resolution tests
-- [x] Manually confirm a stable/lazer behavior difference for explicit custom filenames
-
-Completed compatibility work:
-
-- [x] Preserve the explicit-filename comparison beatmap as a reproducible fixture
-- [x] Record each test object's exact `hitSound` flags and `hitSample.filename`
-- [x] Use documented legacy/osu!stable custom-only semantics as the canonical behavior for explicit `hitSample.filename`
-- [x] Update logical hitobject custom-filename behavior
-- [x] Add regression tests for the chosen custom-only compatibility semantics
-- [x] Preserve a second fixture covering spinner and remaining slider behavior
-- [x] Verify that slider trailing `HitSample.Index`, `HitSample.Volume`, and `HitSample.Filename` do not override edge/body/tick sample generation
+- [x] Preserve reproducible explicit-filename compatibility fixtures
+- [x] Use legacy/osu!stable custom-only semantics as canonical explicit-filename behavior
+- [x] Verify slider trailing `HitSample.Index`, `HitSample.Volume`, and `HitSample.Filename` do not override edge/body/tick generation
 - [x] Resolve slider edge `SampleIndex` / `Volume` from the sample timing point at the edge time
 - [x] Resolve slider body/tick `SampleIndex` / `Volume` from the sample timing point at slider start
 - [x] Cover pre-first-timing-point and no-timing-point sample fallbacks
-- [x] Reach `182/182` passing tests
+- [x] Verify and implement slider `edgeSets = 0:0` inheritance from the sample timing point rather than slider trailing sample-bank values
+- [x] Add pre-first-timing-point edge-set regression coverage
+- [x] Add universal bankless beatmap sample fallback after the specific banked candidate
+- [x] Ensure `SampleIndex = 0` does not use universal beatmap samples
+- [x] Keep universal beatmap hits under `BeatmapSampleFound` rather than adding another resolution outcome
+- [x] Run the full regression suite before moving into Audio Infrastructure
 
-Current next compatibility question:
+Deliberately deferred until a concrete consumer requires them:
 
-- [ ] Verify slider `edgeSets = 0:0` inheritance semantics from official evidence or a reproducible fixture before changing code
+- [ ] Define stable logical `SampleId`
+- [ ] Load additional sample metadata
+- [ ] Refactor duplicated standard/body/tick lookup construction
 
-Remaining Physical Sample Resolution work:
-
-- [ ] Review whether any additional physical fallback states are required
-- [ ] Define stable logical `SampleId` only when identity requirements are clear
-- [ ] Load only the sample metadata required by later editor/audio work
-- [ ] Run the full Physical Sample Resolution regression suite and review the boundary before moving to Audio Infrastructure
-Do not introduce global optimization yet.
+These deferred items do not block Audio Infrastructure and should not be introduced prematurely.
 
 ---
 
 ## Audio Infrastructure
 
-**Status: NOT STARTED**
+**Status: IN PROGRESS**
 
-Prefer an independently evaluated open-source .NET audio library for infrastructure rather than implementing low-level playback or decoding ourselves.
+Current full-suite checkpoint: **197/197 tests passing**
 
-Planned:
+Selected infrastructure:
 
-- [ ] Evaluate/adopt audio library
-- [ ] Decode required audio formats
-- [ ] Basic playback
-- [ ] Seek
-- [ ] Play hitsound layers together
-- [ ] Synchronize playback position with editor timeline
+- [x] Evaluate/adopt NAudio 3.1.0
+- [x] Add NAudio.Vorbis 3.0.0 for OGG decoding
+- [x] Target production/tests to `net10.0-windows`
+- [x] Validate `WasapiPlayer` as the modern Windows playback direction
+
+Diagnostic spike completed and removed after validating:
+
+- [x] WAV/MP3/OGG decoding
+- [x] basic play/pause/resume/stop
+- [x] seek during playback
+- [x] simultaneous sample mixing
+- [x] sample-rate normalization
+- [x] mono-to-stereo normalization
+- [x] multichannel-to-stereo behavior using the first two channels
+- [x] per-layer volume
+- [x] low-latency WASAPI behavior
+- [x] rendered output clock as timeline basis
+- [x] seek timeline-base model
+
+Production implementation completed:
+
+- [x] `AudioPlaybackEngine.OpenAudioFile(...)`
+- [x] WAV/MP3 production decoding through `AudioFileReader`
+- [x] OGG production decoding through `VorbisWaveReader`
+- [x] missing-file and unsupported-format behavior
+- [x] `AudioPlaybackEngine.NormalizeForMixer(...)`
+- [x] convert decoded input to `ISampleProvider`
+- [x] normalize mono to stereo
+- [x] normalize >2 channels by preserving channels 0 and 1
+- [x] resample to a caller-provided target sample rate
+- [x] automated production tests for opening and normalization
+
+Next:
+
+- [ ] Basic production playback with `WasapiPlayer`
+- [ ] Build the production mixer/output-device lifetime boundary
+- [ ] Use `DeviceMixFormat.SampleRate` as the production target sample rate
+- [ ] Add play/pause/stop behavior
+- [ ] Add seek
+- [ ] Add dynamic simultaneous hitsound triggering
+- [ ] Apply per-layer `HitSoundLayer.Volume`
+- [ ] Synchronize playback position with the editor timeline using rendered output position rather than decoder `CurrentTime`
+- [ ] Handle output-device errors/lifetime deliberately
+
+Do not copy the removed diagnostic spike into `src/`. Production methods are re-derived and written by the author through the normal learning workflow.
 
 ---
 
@@ -213,24 +236,23 @@ parse
 ```
 
 ---
+
 ## osu!tools Submission Milestone
 
 **Target: after Export and Round-Trip Verification**
 
-At this point, evaluate whether the project is ready to be submitted to the osu!tools directory.
-
 Before submission:
 
-- [ ] The editor provides a complete useful workflow for another user.
-- [ ] A beatmap can be opened, edited, and exported.
-- [ ] Hitsounds can be previewed reliably.
-- [ ] Exported beatmaps pass round-trip logical equivalence verification.
-- [ ] A downloadable GitHub release is available.
-- [ ] Basic user documentation exists.
-- [ ] Installation and first-use instructions have been tested from a clean environment.
-- [ ] Known important limitations are documented.
-- [ ] Re-check the current osu!tools submission requirements.
-- [ ] Prepare screenshots, description, download link, and repository link as required.
+- [ ] The editor provides a complete useful workflow for another user
+- [ ] A beatmap can be opened, edited, and exported
+- [ ] Hitsounds can be previewed reliably
+- [ ] Exported beatmaps pass round-trip logical equivalence verification
+- [ ] A downloadable GitHub release is available
+- [ ] Basic user documentation exists
+- [ ] Installation and first-use instructions have been tested from a clean environment
+- [ ] Known important limitations are documented
+- [ ] Re-check the current osu!tools submission requirements
+- [ ] Prepare screenshots, description, download link, and repository link as required
 
 Sample Optimization is not required for the first submission unless later development shows that it is necessary for the editor's core workflow.
 
