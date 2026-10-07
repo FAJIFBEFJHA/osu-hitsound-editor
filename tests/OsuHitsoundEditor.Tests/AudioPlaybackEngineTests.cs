@@ -242,4 +242,43 @@ public class AudioPlaybackEngineTests
             File.Delete(path);
         }
     }
+    [Fact]
+    public void Play_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
+    {
+        var engine = new AudioPlaybackEngine();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => engine.Play());
+
+        Assert.Equal(
+            "The audio output has not been initialized.",
+            exception.Message);
+    }
+    [Fact]
+    public void Pause_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
+    {
+        var engine = new AudioPlaybackEngine();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => engine.Pause());
+
+        Assert.Equal(
+            "The audio output has not been initialized.",
+            exception.Message);
+    }
+    [Fact]
+    public void Stop_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
+    {
+        var engine = new AudioPlaybackEngine();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => engine.Stop());
+
+        Assert.Equal(
+            "The audio output has not been initialized.",
+            exception.Message);
+    }
 }

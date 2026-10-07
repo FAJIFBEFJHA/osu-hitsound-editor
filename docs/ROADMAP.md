@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **197/197 tests passing**
+Current full-suite checkpoint: **200/200 tests passing**
 
 Selected infrastructure:
 
@@ -173,18 +173,26 @@ Production implementation completed:
 - [x] normalize >2 channels by preserving channels 0 and 1
 - [x] resample to a caller-provided target sample rate
 - [x] automated production tests for opening and normalization
+- [x] keep `AudioPlaybackEngine` construction hardware-independent
+- [x] explicitly initialize production output with `WasapiPlayerBuilder`
+- [x] build a persistent stereo float `MixingSampleProvider`
+- [x] use `DeviceMixFormat.SampleRate` as the mixer/output target sample rate
+- [x] initialize `WasapiPlayer` with the persistent mixer
+- [x] add guarded `Play()` / `Pause()` / `Stop()` controls
+- [x] centralize initialized-output validation in `GetInitializedOutputDevice()`
+- [x] implement `IDisposable` cleanup for the owned output device
+- [x] add hardware-independent control-state tests
 
 Next:
 
-- [ ] Basic production playback with `WasapiPlayer`
-- [ ] Build the production mixer/output-device lifetime boundary
-- [ ] Use `DeviceMixFormat.SampleRate` as the production target sample rate
-- [ ] Add play/pause/stop behavior
+- [ ] Add one decoded/normalized audio source to the persistent mixer
+- [ ] Define and implement source-reader ownership/disposal for mixer inputs
+- [ ] Verify real production playback with a focused manual/device check
 - [ ] Add seek
 - [ ] Add dynamic simultaneous hitsound triggering
 - [ ] Apply per-layer `HitSoundLayer.Volume`
 - [ ] Synchronize playback position with the editor timeline using rendered output position rather than decoder `CurrentTime`
-- [ ] Handle output-device errors/lifetime deliberately
+- [ ] Handle partial output-initialization/device errors and recovery deliberately
 
 Do not copy the removed diagnostic spike into `src/`. Production methods are re-derived and written by the author through the normal learning workflow.
 

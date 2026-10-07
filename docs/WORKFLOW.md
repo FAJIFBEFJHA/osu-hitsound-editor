@@ -96,6 +96,32 @@ unless the signature itself is the concept being studied.
 
 Diagnostic or temporary-tool code may be complete, but it must not be copied into `src/` as a shortcut around the learning workflow.
 
+When working with an AI mentor:
+
+```text
+production code under src/
+    -> author writes it
+
+less abstract explanation
+single pseudocode line
+syntax example
+partial-method review
+    -> not permission for a complete production implementation
+```
+
+Small snippets are acceptable for explaining one expression, one API call, or one exception, but they must not be assembled into a de facto complete production method unless the author explicitly asks for the full implementation.
+
+`FLUJO` must expose important intermediate transformations. In particular:
+
+```text
+builder
+    -> configure builder
+    -> Build()
+    -> concrete result object
+```
+
+must not be compressed into an ambiguous instruction such as "create the result using the builder" when the intermediate type change matters.
+
 ---
 
 ## While implementing
@@ -106,6 +132,8 @@ Keep track of data flow:
 Where does this value come from?
 What type is it?
 Which method transforms it?
+Does that call return a different type/object?
+Who owns the result and how long must it live?
 Where does the result go?
 ```
 
@@ -119,6 +147,10 @@ spanDuration              500
 edgeIndex                 1
 edgeTime                  2000
 ```
+
+When using an external library and the API behavior is uncertain, verify the official documentation/source for the exact package version referenced by the project before building further instructions on top of it.
+
+When a type transition itself is part of what is being learned, prefer an explicit type in the example. `var` is fine when the inferred type is obvious on the same line and does not hide an important transformation.
 
 ---
 
@@ -161,6 +193,18 @@ dotnet test
 
 Do not change a correct test merely to make an incorrect implementation pass.
 
+Keep the standard automated suite independent of physical hardware when possible. If a behavior requires a real audio device or another machine-specific resource:
+
+```text
+hardware-independent contract
+    -> automated test
+
+real device path
+    -> focused manual/integration verification
+```
+
+Do not make ordinary CI depend on hardware unless the project deliberately introduces an appropriate integration-test environment.
+
 If tests fail:
 
 ```text
@@ -199,6 +243,8 @@ Evaluate:
 - risk
 - maintainability
 - timing
+
+When duplication is real, use the smallest helper that removes it. Do not turn a simple repeated precondition into a generic delegate/callback/interface abstraction unless the current feature actually benefits from that extra flexibility.
 
 Prefer functional progress over premature abstraction.
 

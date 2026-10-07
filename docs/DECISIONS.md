@@ -15,6 +15,7 @@ AI may:
 - explain responsibilities and data flow
 - provide pseudocode
 - review author-written code
+- provide small syntax/API fragments that do not amount to a complete production method
 - provide complete tests
 - provide Git commands
 - provide configuration
@@ -22,9 +23,13 @@ AI may:
 - provide temporary scripts/tools
 - provide complete exception-handling expressions/messages
 
+A request for a less abstract explanation, a concrete syntax example, implementation of one pseudocode line, or help with a partial method is not permission to provide the complete surrounding production implementation.
+
+When small code fragments are used for teaching, they must not be chained together in a way that effectively reconstructs the full production method unless the author explicitly requests the complete implementation.
+
 Complete code created by AI for a diagnostic spike, temporary tool, or experiment is evidence used to learn/validate behavior. It must not be copied into `src/` as production implementation merely because it already exists. Production behavior is re-derived through the normal learning workflow and written by the author unless the author explicitly asks for a complete production implementation.
 
-**Reason:** The project is also a C#/.NET learning project. Allowing diagnostic code to bypass the production-code rule would defeat the learning goal even if the diagnostic code is technically correct.
+**Reason:** The project is also a C#/.NET learning project. The author needs to follow responsibility, type changes, data flow, and ownership rather than merely receive working production code. Allowing either diagnostic code or a sequence of "small" snippets to bypass the production-code rule would defeat that learning goal.
 
 ---
 
@@ -382,3 +387,34 @@ timeline position
 A seek resets/restarts the output clock and updates the timeline base to the requested target position.
 
 **Reason:** The diagnostic spike showed that decoder position runs ahead of audible/rendered playback because of buffering, while `WasapiPlayer.GetPosition()` tracks frames rendered by the device. After pause drains the existing padding, source/rendered positions converge; after seek, a timeline base plus rendered position reconstructs the intended editor time.
+---
+
+## D026 — Audio output initialization is explicit and constructor-independent
+
+**Decision:** `AudioPlaybackEngine` construction must remain independent from opening a physical audio device.
+
+The output lifecycle is explicit:
+
+```text
+new AudioPlaybackEngine()
+    -> no WASAPI device opened
+
+InitializeOutput()
+    -> create/configure WasapiPlayer
+    -> read DeviceMixFormat.SampleRate
+    -> create persistent stereo float mixer
+    -> Init(mixer)
+
+Play() / Pause() / Stop()
+    -> require initialized output
+
+Dispose()
+    -> release owned output device
+    -> clear output/mixer references
+```
+
+`outputDevice` and `mixer` are persistent fields because later playback operations must use the same initialized output/mixer instance.
+
+Ordinary automated tests should remain hardware-independent where practical. Device-dependent WASAPI behavior is verified with focused manual/integration checks until a justified hardware test seam/environment exists.
+
+**Reason:** Existing decoder/normalization tests instantiate `AudioPlaybackEngine` without needing a physical audio endpoint, and GitHub Actions should not become dependent on local playback hardware merely because output support exists. Explicit initialization also makes the resource ownership and lifecycle boundary visible.

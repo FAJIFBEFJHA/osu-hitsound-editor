@@ -11,6 +11,9 @@ Use this file as instructions for any AI assistant helping with `osu-hitsound-ed
 
 - The user writes production/project code under `src/`.
 - Do NOT provide complete implementations for code under `src/` unless the user explicitly asks for the complete implementation.
+- A request for a less abstract explanation, a concrete example, the implementation of one pseudocode line, or help with a partial method does **not** count as a request for the complete production implementation.
+- Small code fragments MAY be used to explain syntax, a single expression, a single API call, or an exception. Do not chain those fragments together in a way that effectively reconstructs the entire production method unless the user explicitly requests the complete implementation.
+- When the user submits production code, review that code and describe the required changes. Do not replace it with a complete rewritten method unless the user explicitly asks for the full replacement.
 - Complete code MAY be provided for:
   - tests
   - Git commands
@@ -81,7 +84,10 @@ Rules:
 
 - Under `SECCIÓN:`, always include the full method name/signature before the section location.
 - Keep `FLUJO` concise and directly translatable to code.
-- Do NOT expand it into a long numbered walkthrough unless the user asks.
+- Concise does not mean ambiguous. If an operation changes the object/type or introduces an ownership/lifetime boundary, show the intermediate step explicitly.
+- For builder/factory APIs, do not compress a sequence such as `Builder -> configure -> Build() -> result object` into a generic instruction such as "create the object using the builder".
+- When an external API call returns a materially different type, name the returned value and make the type transition clear in the data flow.
+- Do NOT expand `FLUJO` into a long numbered walkthrough unless the user asks.
 - Do NOT first ask the user to implement only the method signature.
 - Explain the complete method responsibility, then ask the user to implement the complete method.
 
@@ -123,6 +129,8 @@ Evaluate independently:
 
 If a refactor is unnecessary, say so and continue functional development.
 
+When real duplication appears, prefer the smallest helper that removes that duplication. Do not generalize a simple repeated precondition into delegates, generic callbacks, interfaces, or another broader abstraction unless the current problem actually requires it.
+
 Avoid premature abstractions.
 
 ## Code organization
@@ -141,7 +149,10 @@ When useful:
 
 - explain where a value comes from
 - explain where it goes
+- state the important type transitions between objects/methods
 - use one concrete example
+
+Prefer explicit type names while a type transition is part of the concept being learned. `var` is acceptable when the inferred type is obvious from the same expression and using it does not hide an important data-flow/type change.
 
 Do not over-explain concepts the user already demonstrates correctly.
 
@@ -157,6 +168,9 @@ Do not over-explain concepts the user already demonstrates correctly.
 - Complete test code may be provided.
 - When adding tests, state the expected test count when determinable.
 - Never change a correct test merely to make an incorrect implementation pass.
+- Keep the normal automated suite hardware-independent when possible.
+- Do not make standard CI depend on a physical audio device, GPU, peripheral, or other machine-specific resource merely to test infrastructure code.
+- For device-dependent behavior, test the hardware-independent contract automatically and use a focused manual/integration check for the real device path until a justified test seam/environment exists.
 
 ## Feature workflow
 
@@ -228,6 +242,7 @@ When ending or pausing a development session:
 - Say when Visual Studio becomes materially advantageous or necessary.
 - Parser, osu! timing logic, logical hitsound representation, exporter, and optimizer are primarily our own implementation.
 - External open-source libraries are acceptable for infrastructure such as audio/UI after independent evaluation.
+- When behavior of an external dependency is uncertain, verify it against the official documentation or source for the exact package version used by the project. Do not assume the latest version or memory matches the installed version.
 - For uncertain osu! format behavior, verify official osu! documentation or the official open-source implementation instead of guessing.
 - Keep logical sample identity separate from physical `.osu` `SampleSet` / `SampleIndex` / filename representation.
 - Do not introduce CP-SAT or another global optimizer until deterministic parse -> logical representation -> export -> reload -> equivalence verification works.

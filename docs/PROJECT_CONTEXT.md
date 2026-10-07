@@ -23,14 +23,14 @@ The repository is public.
 Current test status:
 
 ```text
-197/197 passing
+200/200 passing
 ```
 
 Beatmap Parsing and Base Model, Hitsound Resolution, and the current Physical Sample Resolution boundary are complete.
 
 ## Current objective
 
-Continue production Audio Infrastructure without copying diagnostic spike implementations into `src/`.
+Continue production Audio Infrastructure from the now-established WASAPI output/mixer lifecycle.
 
 The current production audio boundary can:
 
@@ -41,8 +41,13 @@ The current production audio boundary can:
 - normalize mono to stereo
 - normalize multichannel audio to stereo by preserving input channels 0 and 1
 - resample to a caller-provided target sample rate
+- explicitly initialize a `WasapiPlayer` output device
+- create a persistent stereo float `MixingSampleProvider` at `DeviceMixFormat.SampleRate`
+- keep output initialization out of the constructor
+- play, pause, and stop an initialized output device
+- dispose the owned output device
 
-The next production objective is basic playback using the NAudio/WASAPI behavior already validated by the diagnostic spike, while the author writes the production implementation from the documented responsibility/data flow rather than copying spike code.
+The next production objective is to add an actual audio source to the persistent mixer using the existing `OpenAudioFile(...)` and `NormalizeForMixer(...)` pipeline, while defining the source-reader lifetime deliberately.
 
 ## Current implementation checkpoint
 
@@ -220,12 +225,65 @@ Spike code is evidence, not production implementation. It must not be copied int
 
 ### Current production class
 
-`AudioPlaybackEngine` currently contains:
+`AudioPlaybackEngine` currently owns:
 
 ```text
+WasapiPlayer? outputDevice
+MixingSampleProvider? mixer
+```
+
+and contains:
+
+```text
+InitializeOutput() -> void
+GetInitializedOutputDevice() -> WasapiPlayer
+Play() -> void
+Pause() -> void
+Stop() -> void
 OpenAudioFile(string filePath) -> WaveStream
 NormalizeForMixer(WaveStream reader, int targetSampleRate) -> ISampleProvider
+Dispose() -> void
 ```
+
+`InitializeOutput()`:
+
+```text
+if already initialized
+    -> InvalidOperationException
+
+WasapiPlayerBuilder
+    -> WithLowLatency()
+    -> Build()
+    -> WasapiPlayer
+
+target sample rate
+    -> outputDevice.DeviceMixFormat.SampleRate
+
+mixer format
+    -> IEEE float
+    -> target device sample rate
+    -> 2 channels
+
+mixer
+    -> persistent MixingSampleProvider
+    -> ReadFully = true
+
+outputDevice.Init(mixer)
+```
+
+Initialization is explicit rather than constructor-driven. Constructing `AudioPlaybackEngine` alone does not open a physical audio device, so decoding/normalization tests remain hardware-independent.
+
+`GetInitializedOutputDevice()` centralizes the shared precondition used by `Play()`, `Pause()`, and `Stop()`:
+
+```text
+outputDevice == null
+    -> InvalidOperationException
+
+otherwise
+    -> return outputDevice
+```
+
+`Dispose()` releases the owned `WasapiPlayer` and clears the persistent output/mixer references.
 
 `OpenAudioFile(...)`:
 
@@ -263,7 +321,13 @@ sample rate differs from target
 return current ISampleProvider
 ```
 
-The target sample rate is intentionally provided by the caller. Production playback must not hard-code `44100 Hz`; the eventual playback path should normalize to the active device mix sample rate.
+The next input added to `mixer` must use the mixer's/device's sample rate rather than a hard-coded rate.
+
+### Verification boundary
+
+Automated tests currently cover the hardware-independent `Play()`, `Pause()`, and `Stop()` error contract when output has not been initialized.
+
+`InitializeOutput()` itself opens a real WASAPI device, so ordinary CI does not currently exercise that device-dependent path. Real-device playback will be verified with a focused manual/integration check once a production source can actually be added to the mixer.
 
 ## Test progression
 
@@ -275,6 +339,9 @@ Recent checkpoints:
 190/190  universal bankless beatmap sample fallback coverage
 193/193  audio file opening/error coverage
 197/197  audio format normalization coverage
+198/198  Play() uninitialized-output contract
+199/199  Pause() uninitialized-output contract
+200/200  Stop() uninitialized-output contract
 ```
 
 Treat the actual source and test suite as the implementation truth if this list becomes stale.
@@ -301,13 +368,29 @@ Do not mix these into the next audio step unless they become blockers:
 - use `CultureInfo.InvariantCulture` consistently when parser robustness work resumes
 - improve malformed/empty parser-field handling later
 - keep the lazer-specific spinner traversal sound deferred from the canonical legacy model
+- handle partial `InitializeOutput()` failure/cleanup deliberately when output-device error handling is implemented
+- define ownership/disposal for decoded `WaveStream` instances once sources are added to the persistent mixer
 - do not introduce global optimization before deterministic export/reload equivalence exists
 
 ## Exact next task
 
-Define and implement the smallest production basic-playback responsibility in `AudioPlaybackEngine` using `WasapiPlayer`, with the output format driven by the playback device mix format and existing `NormalizeForMixer(...)` used as the format boundary.
+Define and implement the smallest production responsibility that adds one real audio source to the initialized persistent mixer:
 
-Do not copy the removed `AudioProbe` implementation. Re-derive the production method through the normal method-responsibility workflow, then add tests where hardware-independent verification is possible and use a focused manual playback check for device-dependent behavior.
+```text
+file path
+    -> OpenAudioFile(...)
+    -> WaveStream
+
+mixer.WaveFormat.SampleRate
+    -> NormalizeForMixer(...)
+
+normalized ISampleProvider
+    -> mixer.AddMixerInput(...)
+```
+
+Before finalizing that method, make the source-reader ownership/lifetime explicit so opened `WaveStream` instances are not leaked after mixer inputs finish.
+
+Keep the automated suite hardware-independent; use a focused manual playback check only after the production pipeline can actually feed audio into the WASAPI mixer.
 
 ## Source-of-truth order
 
