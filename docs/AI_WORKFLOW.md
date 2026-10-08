@@ -131,6 +131,21 @@ If a refactor is unnecessary, say so and continue functional development.
 
 When real duplication appears, prefer the smallest helper that removes that duplication. Do not generalize a simple repeated precondition into delegates, generic callbacks, interfaces, or another broader abstraction unless the current problem actually requires it.
 
+A useful signal, not a rigid rule:
+
+```text
+first occurrence
+    -> normally keep it local
+
+second similar occurrence
+    -> observe whether the responsibility is genuinely repeating
+
+third identical/simple repetition
+    -> explicitly evaluate a small helper
+```
+
+A helper may still be justified earlier when it represents a real responsibility boundary, and may still be unjustified after three occurrences when the apparent duplication has different semantics.
+
 Avoid premature abstractions.
 
 ## Code organization
@@ -172,18 +187,85 @@ Do not over-explain concepts the user already demonstrates correctly.
 - Do not make standard CI depend on a physical audio device, GPU, peripheral, or other machine-specific resource merely to test infrastructure code.
 - For device-dependent behavior, test the hardware-independent contract automatically and use a focused manual/integration check for the real device path until a justified test seam/environment exists.
 
+Use these evidence categories deliberately:
+
+```text
+automated regression test
+    -> deterministic project behavior suitable for the normal test suite
+
+manual/integration verification
+    -> behavior that genuinely depends on hardware, OS integration, or another external environment
+
+diagnostic spike
+    -> temporary research used to learn or verify an API/behavior
+    -> not production code
+```
+
+Before implementation, identify which category will verify the behavior. Do not wait until after coding to discover that the planned test requires unavailable hardware.
+
+## Resource ownership
+
+When a method introduces or consumes a resource with lifetime concerns, make ownership explicit before finalizing the method design.
+
+Examples include:
+
+- `IDisposable`
+- `Stream` / `WaveStream`
+- files and handles
+- audio devices
+- event subscriptions
+- other external resources that outlive one expression
+
+Answer:
+
+```text
+Who creates it?
+Who owns it?
+How long must it live?
+Who releases/disposes/unsubscribes it?
+What happens if initialization fails partway through?
+```
+
+Do not hide these answers inside vague pseudocode.
+
+## Session objective and Definition of Done
+
+Before starting production code in a session, state one small functional objective and a short Definition of Done.
+
+Use:
+
+```text
+OBJECTIVE:
+    one concrete functional goal
+
+DONE WHEN:
+    observable completion conditions
+
+VERIFICATION:
+    automated and/or manual evidence required
+
+OUT OF SCOPE:
+    nearby work that must not expand the current task
+```
+
+Keep the Definition of Done small enough to finish and verify in the current session.
+
 ## Feature workflow
 
 For each feature:
 
 ```text
-1. Explain responsibility.
-2. Give SECCIÓN / PERTENECE A / RECIBE / DEVUELVE / UTILIZA / FLUJO.
-3. User implements the complete project method.
-4. Review implementation.
-5. Provide tests.
-6. Run dotnet test.
-7. Continue only after tests pass.
+1. Define the session/feature objective and Definition of Done.
+2. Explain the responsibility.
+3. State the observable normal behavior and relevant invalid/boundary behavior.
+4. Decide how the behavior will be verified.
+5. If resources are involved, define ownership/lifetime.
+6. Give SECCIÓN / PERTENECE A / RECIBE / DEVUELVE / UTILIZA / FLUJO.
+7. User implements the complete project method.
+8. Review implementation.
+9. Provide tests or define the focused manual/integration verification.
+10. Run the relevant verification.
+11. Continue only after the required verification passes.
 ```
 
 ## Git
@@ -196,6 +278,27 @@ Suggest/prepare a commit when:
 - user says they are pausing
 - user is ending the session
 - user explicitly asks for one
+
+### Proportional verification
+
+Verification effort should match the risk of the latest change.
+
+```text
+production/test/script behavior changed
+    -> run the relevant tests/checks
+    -> use a complete session review before the final commit when the session contains meaningful work
+
+documentation/workflow changed meaningfully
+    -> review the actual diff
+    -> use the complete session review when it is part of the session checkpoint
+
+trivial formatting-only correction after an already reviewed clean report
+    -> git diff --check
+    -> git status --short
+    -> do not repeat an expensive full report/test run unless behavior could have changed
+```
+
+If a supposedly trivial edit touches executable logic, tests, configuration semantics, dependency versions, or generated artifacts, treat it as a meaningful change instead.
 
 ### Session closing review
 
@@ -235,6 +338,44 @@ When ending or pausing a development session:
 8. Do not make the user manually copy terminal output when the review file contains the same information.
 
 9. After continuity documents are updated, run `scripts/New-SessionReview.ps1` again when a final complete review is needed before commit. Keep the previous report as part of the local history.
+
+## Multi-device workflow
+
+The repository must be usable from multiple development devices without embedding device-specific paths in tracked files.
+
+Rules:
+
+- Git/GitHub is the synchronization mechanism for the repository. Google Drive, OneDrive, or manual folder copying must not be used to synchronize the Git working tree.
+- Each device uses its own clone.
+- Only one device should actively modify the same checkpoint at a time.
+- Before switching devices, finish a reasonable checkpoint, run the required verification, commit, push, and confirm the working tree is clean.
+- If unfinished work is not suitable for `main`, use a temporary pushed branch. Do not use `git stash` as a transfer mechanism because stashes are local to one clone.
+- On the receiving device, run `git pull`, `git status`, and `dotnet test` before continuing.
+- Do not use `git push --force` on `main`.
+- If `git pull` finds unexpected local changes or conflicts, inspect them before using `reset`, `restore`, `checkout`, or any destructive command.
+- When the user says they are continuing from another device, treat it as a session start and re-establish the repository/test checkpoint before production work.
+
+Tracked scripts and configuration must be portable:
+
+- Do not hard-code drive letters, user-profile paths, repository locations, Google Drive mount points, or other device-specific absolute paths.
+- Derive repository-relative paths from Git or `$PSScriptRoot`.
+- Put unavoidable external machine-specific locations in environment variables or another explicitly local, untracked configuration source.
+- If required local configuration is missing, fail with a clear message instead of guessing a path.
+- Do not commit secrets or machine-specific local configuration.
+- Repository workflow scripts should remain compatible with Windows PowerShell 5.1 unless a newer PowerShell version is materially required.
+- Do not use newer PowerShell/.NET APIs merely for convenience when a simple compatible alternative exists.
+- If a script genuinely requires a newer PowerShell version, document that requirement explicitly before relying on it.
+
+Current local mirror configuration:
+
+```text
+OSU_HITSOUND_CONTEXT_MIRROR
+    -> local directory used only as the Google Drive continuity mirror
+```
+
+`scripts/Sync-ProjectContext.ps1` reads that environment variable. The script itself must contain no device-specific path.
+
+`scripts/New-SessionReview.ps1` must derive repository/report locations dynamically and must not embed a device-specific repository path in the generated report.
 
 ## Project-specific rules
 
@@ -278,7 +419,13 @@ Rules:
 - Edit continuity documents only in `docs/` inside the local repository.
 - Google Drive is a read-only mirror for AI continuity.
 - The AI must not modify the Google Drive copies directly.
-- After committing and pushing documentation changes, synchronize the local documents to Google Drive.
+- After committing and pushing documentation changes, synchronize the local documents with:
+
+  ```powershell
+  .\scripts\Sync-ProjectContext.ps1
+  ```
+
+- The mirror directory is configured per device through `OSU_HITSOUND_CONTEXT_MIRROR`; no device path is stored in the repository.
 - Because the repository is public, use the current repository state as the primary continuity source when direct GitHub access is available.
 - Google Drive remains a secondary continuity mirror and fallback when direct repository access is unavailable.
 - Project snapshots of Drive files may be stale and must not be used to override or diagnose the current repository state.
@@ -304,7 +451,8 @@ When the user starts or resumes a development session:
    - expected test count
    - last completed functionality
    - exact next task
-5. Ask the user to run, or verify the results of:
+5. State the session objective and Definition of Done before production implementation begins.
+6. Ask the user to run, or verify the results of:
 
    ```powershell
    git pull
@@ -312,16 +460,16 @@ When the user starts or resumes a development session:
    dotnet test
    ```
 
-6. Compare the actual test result with the count recorded in `PROJECT_CONTEXT.md`.
-7. If the counts differ:
+7. Compare the actual test result with the count recorded in `PROJECT_CONTEXT.md`.
+8. If the counts differ:
    - do not guess why
    - inspect the current source and tests before continuing
    - treat the actual code and tests as the source of truth
    - update `PROJECT_CONTEXT.md` after the discrepancy is understood
-8. Restate the next task in one short sentence.
-9. If a new method is required, use the required method format.
-10. Do not start unrelated refactors or technical-debt work unless it blocks the current task.
-11. Do not begin implementation until the existing test suite is passing or the reason for an existing failure is understood.
+9. Restate the next task in one short sentence.
+10. If a new method is required, use the required method format.
+11. Do not start unrelated refactors or technical-debt work unless it blocks the current task.
+12. Do not begin implementation until the existing test suite is passing or the reason for an existing failure is understood.
 
 ## Session closing protocol
 
@@ -334,9 +482,11 @@ When the user says they are stopping, pausing, going to sleep, or ending the ses
 5. Identify and update the continuity/documentation files required by the actual changes.
 6. State unresolved questions or technical debt without starting new work.
 7. Give exactly one concrete next task.
-8. Run/review the session-report script again after documentation changes if needed for the final checkpoint.
-9. Provide the appropriate Git commit message and push commands only after tests and final review are clean.
-10. Do not start a new feature.
+8. Run/review the session-report script again after documentation changes when the changes are meaningful enough to require a new full review.
+9. For a formatting-only correction made after an already reviewed report, use proportional lightweight verification instead of automatically repeating the entire report.
+10. Provide the appropriate Git commit message and push commands only after the required verification is clean.
+11. After push, synchronize the Google Drive continuity mirror when it is configured on the current device.
+12. Do not start a new feature.
 
 ## Current checkpoint
 

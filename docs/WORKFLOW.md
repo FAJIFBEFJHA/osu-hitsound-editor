@@ -23,7 +23,23 @@ Then read:
 3. `docs/DECISIONS.md` when the task involves architecture/design
 4. `docs/architecture.md` when the task crosses architectural boundaries
 
-Choose one small functional objective.
+Choose one small functional objective and define how the session will end.
+
+Use:
+
+```text
+OBJECTIVE:
+    one concrete functional goal
+
+DONE WHEN:
+    observable completion conditions
+
+VERIFICATION:
+    automated and/or manual evidence required
+
+OUT OF SCOPE:
+    nearby work that must not expand the current task
+```
 
 Avoid combining:
 
@@ -39,7 +55,30 @@ in one step.
 
 ## Before implementing a new method
 
-Define it using:
+First define the behavior contract:
+
+```text
+NORMAL:
+    what observable result should happen
+
+INVALID / BOUNDARY:
+    relevant states that must be rejected or handled
+
+VERIFICATION:
+    automated regression test and/or focused manual/integration check
+```
+
+If the method creates or retains a resource such as an `IDisposable`, `Stream`, `WaveStream`, file handle, audio device, or event subscription, also answer:
+
+```text
+Who creates it?
+Who owns it?
+How long must it live?
+Who releases it?
+What happens if initialization fails partway through?
+```
+
+Then define the method using:
 
 ```text
 SECCIÓN:
@@ -205,6 +244,22 @@ real device path
 
 Do not make ordinary CI depend on hardware unless the project deliberately introduces an appropriate integration-test environment.
 
+Use the evidence type deliberately:
+
+```text
+automated regression test
+    -> deterministic project behavior
+
+manual/integration verification
+    -> hardware, OS integration, or external environment
+
+diagnostic spike
+    -> temporary API/behavior research
+    -> not production code
+```
+
+Decide the required evidence before implementation rather than after the code is already written.
+
 If tests fail:
 
 ```text
@@ -246,9 +301,134 @@ Evaluate:
 
 When duplication is real, use the smallest helper that removes it. Do not turn a simple repeated precondition into a generic delegate/callback/interface abstraction unless the current feature actually benefits from that extra flexibility.
 
+Use this only as a signal:
+
+```text
+first occurrence
+    -> normally keep local
+
+second similar occurrence
+    -> observe
+
+third identical/simple repetition
+    -> explicitly evaluate a small helper
+```
+
+This is not a mathematical rule. A real responsibility boundary can justify a helper earlier, while superficially similar code can remain separate when its semantics differ.
+
 Prefer functional progress over premature abstraction.
 
 ---
+
+## Verification proportional to risk
+
+Do not repeat expensive verification mechanically when the latest change cannot affect behavior.
+
+```text
+production / tests / executable script logic changed
+    -> run relevant verification
+    -> run dotnet test when project behavior may be affected
+
+meaningful documentation/workflow checkpoint
+    -> inspect the actual diff
+    -> include it in the normal session review
+
+formatting-only correction after an already reviewed report
+    -> git diff --check
+    -> git status --short
+    -> no automatic full report/test rerun
+```
+
+If a change touches executable semantics, dependency versions, generated artifacts, or configuration behavior, it is not formatting-only.
+
+---
+
+## Working across multiple devices
+
+Use Git/GitHub, not a synchronized folder, as the repository transport.
+
+```text
+DEVICE A
+    -> verify current work
+    -> commit
+    -> push
+    -> confirm clean working tree
+
+DEVICE B
+    -> git pull
+    -> git status
+    -> dotnet test
+    -> continue
+```
+
+Rules:
+
+- Each device has its own clone.
+- Do not place the Git repository itself inside Google Drive/OneDrive as a synchronization strategy.
+- Do not copy the repository folder between devices to transfer changes.
+- Avoid modifying the same checkpoint on two devices at once.
+- Prefer a stable checkpoint on `main` before switching devices.
+- If unfinished work is not appropriate for `main`, push it on a temporary branch and continue that branch on the other device.
+- `git stash` is local and is not a cross-device transfer mechanism.
+- Never force-push `main`.
+- Unexpected local changes or conflicts must be inspected before destructive Git commands are used.
+
+### Portable scripts and local configuration
+
+Tracked scripts must not contain:
+
+```text
+drive letters
+user-profile paths
+absolute repository paths
+device-specific Google Drive mount paths
+machine-specific secrets
+```
+
+Use repository-relative discovery through Git or `$PSScriptRoot`.
+
+External machine-specific locations belong in environment variables or another explicitly local/untracked configuration source.
+
+Routine repository scripts target Windows PowerShell 5.1 compatibility unless the task genuinely requires a newer runtime.
+
+Before introducing a newer PowerShell/.NET API:
+
+```text
+Is the newer API materially required?
+    no
+        -> use a Windows PowerShell 5.1-compatible alternative
+
+    yes
+        -> document the required PowerShell version
+        -> fail clearly when the required version is unavailable
+```
+
+The Google Drive continuity mirror uses:
+
+```text
+OSU_HITSOUND_CONTEXT_MIRROR
+```
+
+Configure that variable separately on each device. The repository stores only the variable name, never the actual local path.
+
+Generic setup form:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+    "OSU_HITSOUND_CONTEXT_MIRROR",
+    "<local-mirror-directory>",
+    "User")
+```
+
+Open a new PowerShell session after changing a user-level environment variable.
+
+The tracked synchronization command is always:
+
+```powershell
+.\scripts\Sync-ProjectContext.ps1
+```
+
+`scripts/New-SessionReview.ps1` and `scripts/Sync-ProjectContext.ps1` must derive their working locations dynamically. Session review content should use portable placeholders such as `<repo-root>` rather than embedding the current device's absolute repository path.
 
 ## Before ending a session
 
@@ -315,11 +495,13 @@ Do not use `Phase N` numbering for roadmap stages.
 
 `PROJECT_CONTEXT.md` is a checkpoint, not a diary. Keep it current and focused on information needed to resume development.
 
-After documentation changes, run the review script again when a final complete review is needed:
+After meaningful documentation or executable changes, run the review script again when a final complete review is needed:
 
 ```powershell
 .\scripts\New-SessionReview.ps1
 ```
+
+If the only post-review change was formatting-only, use the proportional lightweight checks instead of repeating the full report automatically.
 
 If the current functional/documentation checkpoint is complete and the report is clean:
 
@@ -333,7 +515,13 @@ Google Drive is an optional continuity mirror, not the primary project checkpoin
 
 When direct repository access is available, use the pushed repository state for continuity and verification.
 
-If the Drive mirror is used, synchronize it only after repository changes have been committed and pushed.
+If the Drive mirror is used, synchronize it only after repository changes have been committed and pushed:
+
+```powershell
+.\scripts\Sync-ProjectContext.ps1
+```
+
+The script reads `OSU_HITSOUND_CONTEXT_MIRROR` from the current device. No device-specific path belongs in the tracked script or documentation.
 
 When verifying the continuity mirror:
 

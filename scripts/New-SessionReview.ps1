@@ -1,7 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-function Invoke-NativeCommandCaptured
-{
+function Invoke-NativeCommandCaptured {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Command,
@@ -12,32 +11,29 @@ function Invoke-NativeCommandCaptured
 
     $previousErrorActionPreference = $ErrorActionPreference
 
-    try
-    {
+    try {
         # Native commands such as Git may legitimately write warnings to stderr.
         # Do not allow PowerShell to convert those warnings into terminating errors.
         $ErrorActionPreference = "Continue"
 
         $output = @(
             & $Command @Arguments 2>&1 |
-                ForEach-Object { $_.ToString() }
+            ForEach-Object { $_.ToString() }
         )
 
         $exitCode = $LASTEXITCODE
     }
-    finally
-    {
+    finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
 
     return [PSCustomObject]@{
-        Output = $output
+        Output   = $output
         ExitCode = $exitCode
     }
 }
 
-function Add-Section
-{
+function Add-Section {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Title,
@@ -48,19 +44,54 @@ function Add-Section
 
     "" | Add-Content -Path $Path -Encoding utf8
     "============================================================" |
-        Add-Content -Path $Path -Encoding utf8
+    Add-Content -Path $Path -Encoding utf8
     $Title |
-        Add-Content -Path $Path -Encoding utf8
+    Add-Content -Path $Path -Encoding utf8
     "============================================================" |
-        Add-Content -Path $Path -Encoding utf8
+    Add-Content -Path $Path -Encoding utf8
+}
+
+function Convert-ToPortableOutput {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string[]]$Lines,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RepositoryRoot
+    )
+
+    $pathVariants = @(
+        $RepositoryRoot,
+        ($RepositoryRoot -replace "/", "\"),
+        ($RepositoryRoot -replace "\\", "/")
+    ) |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+    Select-Object -Unique
+
+    return @(
+        foreach ($line in $Lines) {
+            $portableLine = $line
+
+            foreach ($pathVariant in $pathVariants) {
+                $portableLine = [System.Text.RegularExpressions.Regex]::Replace(
+                    $portableLine,
+                    [System.Text.RegularExpressions.Regex]::Escape($pathVariant),
+                    "<repo-root>",
+                    [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            }
+
+            $portableLine
+        }
+    )
 }
 
 $repoResult = Invoke-NativeCommandCaptured `
     -Command "git" `
     -Arguments @("rev-parse", "--show-toplevel")
 
-if ($repoResult.ExitCode -ne 0)
-{
+if ($repoResult.ExitCode -ne 0) {
     throw "The current directory is not inside a Git repository."
 }
 
@@ -87,16 +118,18 @@ New-Item `
     -ItemType Directory `
     -Path $reviewDirectory `
     -Force |
-    Out-Null
+Out-Null
+
+$fileName = "$repoName-session-review_$timestamp.txt"
 
 $outputPath = Join-Path `
     $reviewDirectory `
-    "$repoName-session-review_$timestamp.txt"
+    $fileName
 
 @(
     "OSU HITSOUND EDITOR - SESSION REVIEW"
     "Generated: $($generatedAt.ToString('yyyy-MM-dd HH:mm:ss'))"
-    "Repository: $repoRoot"
+    "Repository: $repoName"
 ) | Set-Content -Path $outputPath -Encoding utf8
 
 Add-Section -Title "DOTNET TEST" -Path $outputPath
@@ -105,15 +138,18 @@ $testResult = Invoke-NativeCommandCaptured `
     -Command "dotnet" `
     -Arguments @("test")
 
-if ($testResult.Output.Count -gt 0)
-{
-    $testResult.Output |
-        Add-Content -Path $outputPath -Encoding utf8
+$portableTestOutput = Convert-ToPortableOutput `
+    -Lines $testResult.Output `
+    -RepositoryRoot $repoRoot
+
+if ($portableTestOutput.Count -gt 0) {
+    $portableTestOutput |
+    Add-Content -Path $outputPath -Encoding utf8
 }
 
 "" | Add-Content -Path $outputPath -Encoding utf8
 "dotnet test exit code: $($testResult.ExitCode)" |
-    Add-Content -Path $outputPath -Encoding utf8
+Add-Content -Path $outputPath -Encoding utf8
 
 Add-Section -Title "GIT STATUS" -Path $outputPath
 
@@ -121,15 +157,17 @@ $statusResult = Invoke-NativeCommandCaptured `
     -Command "git" `
     -Arguments @("status", "--short")
 
-if ($statusResult.Output.Count -gt 0)
-{
-    $statusResult.Output |
-        Add-Content -Path $outputPath -Encoding utf8
+$portableStatusOutput = Convert-ToPortableOutput `
+    -Lines $statusResult.Output `
+    -RepositoryRoot $repoRoot
+
+if ($portableStatusOutput.Count -gt 0) {
+    $portableStatusOutput |
+    Add-Content -Path $outputPath -Encoding utf8
 }
-else
-{
+else {
     "(clean)" |
-        Add-Content -Path $outputPath -Encoding utf8
+    Add-Content -Path $outputPath -Encoding utf8
 }
 
 Add-Section -Title "DIFF STAT" -Path $outputPath
@@ -138,15 +176,17 @@ $diffStatResult = Invoke-NativeCommandCaptured `
     -Command "git" `
     -Arguments @("diff", "--stat")
 
-if ($diffStatResult.Output.Count -gt 0)
-{
-    $diffStatResult.Output |
-        Add-Content -Path $outputPath -Encoding utf8
+$portableDiffStatOutput = Convert-ToPortableOutput `
+    -Lines $diffStatResult.Output `
+    -RepositoryRoot $repoRoot
+
+if ($portableDiffStatOutput.Count -gt 0) {
+    $portableDiffStatOutput |
+    Add-Content -Path $outputPath -Encoding utf8
 }
-else
-{
+else {
     "(no tracked unstaged changes)" |
-        Add-Content -Path $outputPath -Encoding utf8
+    Add-Content -Path $outputPath -Encoding utf8
 }
 
 Add-Section -Title "DIFF CHECK" -Path $outputPath
@@ -155,20 +195,22 @@ $diffCheckResult = Invoke-NativeCommandCaptured `
     -Command "git" `
     -Arguments @("diff", "--check")
 
-if ($diffCheckResult.Output.Count -gt 0)
-{
-    $diffCheckResult.Output |
-        Add-Content -Path $outputPath -Encoding utf8
+$portableDiffCheckOutput = Convert-ToPortableOutput `
+    -Lines $diffCheckResult.Output `
+    -RepositoryRoot $repoRoot
+
+if ($portableDiffCheckOutput.Count -gt 0) {
+    $portableDiffCheckOutput |
+    Add-Content -Path $outputPath -Encoding utf8
 }
-else
-{
+else {
     "(no issues)" |
-        Add-Content -Path $outputPath -Encoding utf8
+    Add-Content -Path $outputPath -Encoding utf8
 }
 
 "" | Add-Content -Path $outputPath -Encoding utf8
 "git diff --check exit code: $($diffCheckResult.ExitCode)" |
-    Add-Content -Path $outputPath -Encoding utf8
+Add-Content -Path $outputPath -Encoding utf8
 
 Add-Section `
     -Title "UNSTAGED TRACKED DIFF" `
@@ -177,20 +219,22 @@ Add-Section `
 $unstagedResult = Invoke-NativeCommandCaptured `
     -Command "git" `
     -Arguments @(
-        "diff",
-        "--no-ext-diff",
-        "--text"
-    )
+    "diff",
+    "--no-ext-diff",
+    "--text"
+)
 
-if ($unstagedResult.Output.Count -gt 0)
-{
-    $unstagedResult.Output |
-        Add-Content -Path $outputPath -Encoding utf8
+$portableUnstagedOutput = Convert-ToPortableOutput `
+    -Lines $unstagedResult.Output `
+    -RepositoryRoot $repoRoot
+
+if ($portableUnstagedOutput.Count -gt 0) {
+    $portableUnstagedOutput |
+    Add-Content -Path $outputPath -Encoding utf8
 }
-else
-{
+else {
     "(none)" |
-        Add-Content -Path $outputPath -Encoding utf8
+    Add-Content -Path $outputPath -Encoding utf8
 }
 
 Add-Section `
@@ -200,21 +244,23 @@ Add-Section `
 $stagedResult = Invoke-NativeCommandCaptured `
     -Command "git" `
     -Arguments @(
-        "diff",
-        "--cached",
-        "--no-ext-diff",
-        "--text"
-    )
+    "diff",
+    "--cached",
+    "--no-ext-diff",
+    "--text"
+)
 
-if ($stagedResult.Output.Count -gt 0)
-{
-    $stagedResult.Output |
-        Add-Content -Path $outputPath -Encoding utf8
+$portableStagedOutput = Convert-ToPortableOutput `
+    -Lines $stagedResult.Output `
+    -RepositoryRoot $repoRoot
+
+if ($portableStagedOutput.Count -gt 0) {
+    $portableStagedOutput |
+    Add-Content -Path $outputPath -Encoding utf8
 }
-else
-{
+else {
     "(none)" |
-        Add-Content -Path $outputPath -Encoding utf8
+    Add-Content -Path $outputPath -Encoding utf8
 }
 
 Add-Section `
@@ -224,10 +270,10 @@ Add-Section `
 $untrackedResult = Invoke-NativeCommandCaptured `
     -Command "git" `
     -Arguments @(
-        "ls-files",
-        "--others",
-        "--exclude-standard"
-    )
+    "ls-files",
+    "--others",
+    "--exclude-standard"
+)
 
 $untrackedFiles = $untrackedResult.Output
 
@@ -247,86 +293,87 @@ $textExtensions = @(
     ".slnx"
 )
 
-if ($untrackedFiles.Count -eq 0)
-{
+if ($untrackedFiles.Count -eq 0) {
     "(none)" |
-        Add-Content -Path $outputPath -Encoding utf8
+    Add-Content -Path $outputPath -Encoding utf8
 }
-else
-{
-    foreach ($file in $untrackedFiles)
-    {
+else {
+    foreach ($file in $untrackedFiles) {
         "" | Add-Content -Path $outputPath -Encoding utf8
 
         "----- $file -----" |
-            Add-Content -Path $outputPath -Encoding utf8
+        Add-Content -Path $outputPath -Encoding utf8
 
         $fullPath = Join-Path $repoRoot $file
 
         $extension =
-            [System.IO.Path]::GetExtension(
-                $file
-            ).ToLowerInvariant()
+        [System.IO.Path]::GetExtension(
+            $file
+        ).ToLowerInvariant()
 
         $name =
-            [System.IO.Path]::GetFileName($file)
+        [System.IO.Path]::GetFileName($file)
 
         if (
             $extension -in $textExtensions -or
             $name -eq ".editorconfig"
-        )
-        {
-            Get-Content `
+        ) {
+            $rawContent = Get-Content `
                 -LiteralPath $fullPath `
-                -Raw |
-                Add-Content `
-                    -Path $outputPath `
-                    -Encoding utf8
+                -Raw
+
+            $portableContent = Convert-ToPortableOutput `
+                -Lines @($rawContent) `
+                -RepositoryRoot $repoRoot
+
+            $portableContent |
+            Add-Content `
+                -Path $outputPath `
+                -Encoding utf8
         }
-        else
-        {
+        else {
             "[Binary or unsupported text file - content omitted]" |
-                Add-Content `
-                    -Path $outputPath `
-                    -Encoding utf8
+            Add-Content `
+                -Path $outputPath `
+                -Encoding utf8
         }
     }
 }
 
 Add-Section -Title "SUMMARY" -Path $outputPath
 
-if ($testResult.ExitCode -eq 0)
-{
+if ($testResult.ExitCode -eq 0) {
     "Tests: PASS" |
-        Add-Content -Path $outputPath -Encoding utf8
+    Add-Content -Path $outputPath -Encoding utf8
 }
-else
-{
+else {
     "Tests: FAIL" |
-        Add-Content -Path $outputPath -Encoding utf8
+    Add-Content -Path $outputPath -Encoding utf8
 }
 
-if ($statusResult.Output.Count -gt 0)
-{
+if ($statusResult.Output.Count -gt 0) {
     "Repository has uncommitted changes." |
-        Add-Content -Path $outputPath -Encoding utf8
+    Add-Content -Path $outputPath -Encoding utf8
 }
-else
-{
+else {
     "Repository is clean." |
-        Add-Content -Path $outputPath -Encoding utf8
+    Add-Content -Path $outputPath -Encoding utf8
 }
+
+$relativeOutputPath = Join-Path `
+    ".." `
+(Join-Path `
+        "$repoName-session-reviews" `
+    (Join-Path $dateFolder $fileName))
 
 Write-Host ""
 Write-Host "Session review created:"
-Write-Host $outputPath
+Write-Host $relativeOutputPath
 
-if ($testResult.ExitCode -ne 0)
-{
+if ($testResult.ExitCode -ne 0) {
     Write-Warning "Tests failed. Review the report before committing."
 }
 
-if ($diffCheckResult.ExitCode -ne 0)
-{
+if ($diffCheckResult.ExitCode -ne 0) {
     Write-Warning "git diff --check reported issues. Review the report before committing."
 }
