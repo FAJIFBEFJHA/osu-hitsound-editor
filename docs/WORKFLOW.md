@@ -95,6 +95,12 @@ DEVUELVE:
 
 UTILIZA:
     Existing properties, methods, classes, or data used.
+    When relevant, classify implementation data as:
+        FIELD NUEVO
+        LOCAL NUEVA
+        PARAMETER
+        EXISTENTE
+    State its exact type, declaration location, scope when relevant, and responsibility.
 
 FLUJO:
     Short pseudocode directly translatable to code.
@@ -160,6 +166,22 @@ builder
 ```
 
 must not be compressed into an ambiguous instruction such as "create the result using the builder" when the intermediate type change matters.
+
+Before implementation, verify that the proposed flow covers the applicable:
+
+```text
+normal path
+error paths
+variable scope
+ownership / lifetime
+cleanup
+state transitions
+threading / concurrency
+```
+
+Avoid ambiguous assignment arrows when source and destination could be confused. Prefer `destination = source` or explicitly say "store source in destination".
+
+Do not introduce a predictable requirement from this review only after the author has already implemented the method, unless new evidence genuinely appeared later.
 
 ---
 
@@ -244,6 +266,8 @@ real device path
 
 Do not make ordinary CI depend on hardware unless the project deliberately introduces an appropriate integration-test environment.
 
+If a real-device verification is written as a temporary integration test, remove that test after the behavior is verified and rerun the permanent automated suite.
+
 Use the evidence type deliberately:
 
 ```text
@@ -317,6 +341,58 @@ third identical/simple repetition
 This is not a mathematical rule. A real responsibility boundary can justify a helper earlier, while superficially similar code can remain separate when its semantics differ.
 
 Prefer functional progress over premature abstraction.
+
+---
+
+## Automation threshold
+
+Do not automate a workflow merely because automation is possible.
+
+Use the manual process first long enough to understand:
+
+```text
+the steps
+failure modes
+actual repetition/friction
+human-error risk
+```
+
+Automate only when that experience demonstrates a concrete benefit, unless automation is required for correctness, reproducibility, or safety.
+
+---
+
+## Documentation updates and patches
+
+For partial changes to an existing tracked text/documentation file, prefer a Git patch over replacing the entire file.
+
+```text
+existing tracked file + partial changes
+    -> .patch
+
+new file
+    -> complete file
+
+deliberate full replacement
+    -> complete replacement file
+```
+
+The patch must be generated against the version the user actually has locally. If the target file has uncommitted local changes, do not use a stale repository or Project/Drive snapshot as the base.
+
+Apply patches in two steps:
+
+```powershell
+git apply --check .\change.patch
+git apply .\change.patch
+```
+
+If the check fails:
+
+```text
+stop
+do not force
+identify the base-version mismatch
+regenerate/reconcile the patch
+```
 
 ---
 

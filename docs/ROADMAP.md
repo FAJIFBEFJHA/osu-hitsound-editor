@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **200/200 tests passing**
+Current full-suite checkpoint: **202/202 tests passing**
 
 Selected infrastructure:
 
@@ -182,12 +182,16 @@ Production implementation completed:
 - [x] centralize initialized-output validation in `GetInitializedOutputDevice()`
 - [x] implement `IDisposable` cleanup for the owned output device
 - [x] add hardware-independent control-state tests
+- [x] Add one decoded/normalized audio source to the persistent mixer
+- [x] Define and implement source-reader ownership/disposal for mixer inputs
+- [x] Verify real production playback with a focused manual/device check
+- [x] Add a persistent timeline-audio source boundary with `LoadTimelineAudio(...)`
+- [x] Keep the timeline decoder alive after its mixer input ends so future seek can reposition it
+- [x] Add the hardware-independent `LoadTimelineAudio(...)` uninitialized-output contract test
 
 Next:
 
-- [ ] Add one decoded/normalized audio source to the persistent mixer
-- [ ] Define and implement source-reader ownership/disposal for mixer inputs
-- [ ] Verify real production playback with a focused manual/device check
+- [ ] Verify persistent timeline-audio lifetime with a focused manual/device check
 - [ ] Add seek
 - [ ] Add dynamic simultaneous hitsound triggering
 - [ ] Apply per-layer `HitSoundLayer.Volume`

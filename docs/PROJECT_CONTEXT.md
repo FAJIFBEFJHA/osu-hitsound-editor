@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT
 
-Last updated: 2026-10-06
+Last updated: 2026-10-08
 
 ## Project
 
@@ -23,14 +23,14 @@ The repository is public.
 Current test status:
 
 ```text
-200/200 passing
+202/202 passing
 ```
 
 Beatmap Parsing and Base Model, Hitsound Resolution, and the current Physical Sample Resolution boundary are complete.
 
 ## Current objective
 
-Continue production Audio Infrastructure from the now-established WASAPI output/mixer lifecycle.
+Continue production Audio Infrastructure from the now-working decoded-source/mixer lifecycle.
 
 The current production audio boundary can:
 
@@ -40,14 +40,17 @@ The current production audio boundary can:
 - convert decoded audio to `ISampleProvider`
 - normalize mono to stereo
 - normalize multichannel audio to stereo by preserving input channels 0 and 1
-- resample to a caller-provided target sample rate
+- resample to the active mixer/device sample rate
 - explicitly initialize a `WasapiPlayer` output device
-- create a persistent stereo float `MixingSampleProvider` at `DeviceMixFormat.SampleRate`
+- create a persistent stereo float `MixingSampleProvider`
+- add decoded/normalized audio sources to the persistent mixer
+- keep each source `WaveStream` alive while its mixer input is active
+- release a source reader when `MixerInputEnded` fires
+- release remaining active source readers when the engine is disposed
 - keep output initialization out of the constructor
 - play, pause, and stop an initialized output device
-- dispose the owned output device
 
-The next production objective is to add an actual audio source to the persistent mixer using the existing `OpenAudioFile(...)` and `NormalizeForMixer(...)` pipeline, while defining the source-reader lifetime deliberately.
+The next production objective is to verify the new persistent timeline-audio lifetime on a real WASAPI device, then implement seek while preserving the established output-clock timeline model.
 
 ## Current implementation checkpoint
 
@@ -230,6 +233,10 @@ Spike code is evidence, not production implementation. It must not be copied int
 ```text
 WasapiPlayer? outputDevice
 MixingSampleProvider? mixer
+Dictionary<ISampleProvider, WaveStream> activeReaders
+WaveStream? timelineReader
+ISampleProvider? timelineProvider
+object activeReadersLock
 ```
 
 and contains:
@@ -240,6 +247,9 @@ GetInitializedOutputDevice() -> WasapiPlayer
 Play() -> void
 Pause() -> void
 Stop() -> void
+LoadTimelineAudio(string filePath) -> void
+AddAudioSource(string filePath) -> void
+OnMixerInputEnded(object? sender, SampleProviderEventArgs e) -> void
 OpenAudioFile(string filePath) -> WaveStream
 NormalizeForMixer(WaveStream reader, int targetSampleRate) -> ISampleProvider
 Dispose() -> void
@@ -321,13 +331,100 @@ sample rate differs from target
 return current ISampleProvider
 ```
 
-The next input added to `mixer` must use the mixer's/device's sample rate rather than a hard-coded rate.
+`AddAudioSource(...)`:
+
+```text
+require initialized mixer
+    -> InvalidOperationException otherwise
+
+OpenAudioFile(filePath)
+    -> WaveStream
+
+NormalizeForMixer(
+    reader,
+    mixer.WaveFormat.SampleRate)
+    -> ISampleProvider
+
+register:
+    provider -> reader
+
+mixer.AddMixerInput(provider)
+```
+
+Source-reader ownership is explicit:
+
+```text
+before registration
+    -> AddAudioSource owns the WaveStream
+
+after registration
+    -> AudioPlaybackEngine owns the WaveStream
+
+MixerInputEnded
+    -> remove provider -> reader ownership entry
+    -> dispose reader
+
+AudioPlaybackEngine.Dispose()
+    -> stop/dispose output
+    -> remove mixer inputs
+    -> claim remaining active readers
+    -> dispose them outside the ownership lock
+```
+
+All access that mutates `activeReaders` is protected by `activeReadersLock`. Resource disposal occurs outside that lock.
+
+`LoadTimelineAudio(...)` introduces a separate persistent lifetime for the beatmap's main timeline audio:
+
+```text
+require initialized mixer
+    -> InvalidOperationException otherwise
+
+require no timeline source already loaded
+    -> InvalidOperationException otherwise
+
+OpenAudioFile(filePath)
+    -> timelineReader
+
+NormalizeForMixer(
+    timelineReader,
+    mixer.WaveFormat.SampleRate)
+    -> timelineProvider
+
+mixer.AddMixerInput(timelineProvider)
+```
+
+Unlike temporary sources managed by `activeReaders`, the timeline `WaveStream` remains owned by `AudioPlaybackEngine` after its mixer input ends. `OnMixerInputEnded(...)` clears `timelineProvider` but deliberately keeps `timelineReader` alive so it can be repositioned and normalized again for a future seek. `Dispose()` releases the persistent timeline reader.
+
+For seek, do not reuse a previously consumed `WdlResamplingSampleProvider` after changing the decoder position; it retains internal resampler state. Reposition `timelineReader` and create a fresh normalized provider.
 
 ### Verification boundary
 
-Automated tests currently cover the hardware-independent `Play()`, `Pause()`, and `Stop()` error contract when output has not been initialized.
+Automated tests remain hardware-independent.
 
-`InitializeOutput()` itself opens a real WASAPI device, so ordinary CI does not currently exercise that device-dependent path. Real-device playback will be verified with a focused manual/integration check once a production source can actually be added to the mixer.
+Current permanent automated coverage includes the error contract for:
+
+```text
+Play()
+Pause()
+Stop()
+AddAudioSource(...)
+LoadTimelineAudio(...)
+```
+
+when output has not been initialized.
+
+The real decoded-source playback path was verified manually on a physical WASAPI device with temporary integration tests:
+
+```text
+source reaches end
+    -> MixerInputEnded
+    -> WaveStream released
+
+engine disposed while source is active
+    -> remaining WaveStream released
+```
+
+Those device-dependent tests were removed after verification and are not part of the ordinary automated suite.
 
 ## Test progression
 
@@ -342,6 +439,8 @@ Recent checkpoints:
 198/198  Play() uninitialized-output contract
 199/199  Pause() uninitialized-output contract
 200/200  Stop() uninitialized-output contract
+201/201  AddAudioSource() uninitialized-output contract
+202/202  LoadTimelineAudio() uninitialized-output contract
 ```
 
 Treat the actual source and test suite as the implementation truth if this list becomes stale.
@@ -369,28 +468,39 @@ Do not mix these into the next audio step unless they become blockers:
 - improve malformed/empty parser-field handling later
 - keep the lazer-specific spinner traversal sound deferred from the canonical legacy model
 - handle partial `InitializeOutput()` failure/cleanup deliberately when output-device error handling is implemented
-- define ownership/disposal for decoded `WaveStream` instances once sources are added to the persistent mixer
 - do not introduce global optimization before deterministic export/reload equivalence exists
 
 ## Exact next task
 
-Define and implement the smallest production responsibility that adds one real audio source to the initialized persistent mixer:
+Verify the persistent timeline-audio lifetime with a focused real-device integration check before implementing seek.
+
+The verification must establish:
 
 ```text
-file path
-    -> OpenAudioFile(...)
-    -> WaveStream
+LoadTimelineAudio(...)
+    -> real timeline audio plays through WASAPI
 
-mixer.WaveFormat.SampleRate
-    -> NormalizeForMixer(...)
+timeline source reaches end
+    -> timelineProvider is removed
+    -> timelineReader remains owned/open by AudioPlaybackEngine
 
-normalized ISampleProvider
-    -> mixer.AddMixerInput(...)
+AudioPlaybackEngine.Dispose()
+    -> timelineReader is released
 ```
 
-Before finalizing that method, make the source-reader ownership/lifetime explicit so opened `WaveStream` instances are not leaked after mixer inputs finish.
+After that verification passes, define and implement the smallest production `Seek(...)` responsibility.
 
-Keep the automated suite hardware-independent; use a focused manual playback check only after the production pipeline can actually feed audio into the WASAPI mixer.
+Preserve the established timeline rule:
+
+```text
+editor timeline position
+    = timeline base after the most recent seek
+    + rendered output position
+```
+
+Do not use decoder `CurrentTime` as the authoritative playback clock. A seek must reposition the persistent `timelineReader`, create a fresh normalized provider, reset/restart the rendered-device position as required, and update the timeline base.
+
+Do not start dynamic hitsound triggering, per-layer volume, or editor timeline/UI work as part of the seek step.
 
 ## Source-of-truth order
 

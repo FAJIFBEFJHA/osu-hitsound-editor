@@ -91,6 +91,50 @@ Rules:
 - Do NOT first ask the user to implement only the method signature.
 - Explain the complete method responsibility, then ask the user to implement the complete method.
 
+When variables or fields materially affect implementation, make them explicit inside `UTILIZA:` using these classifications:
+
+```text
+FIELD NUEVO
+LOCAL NUEVA
+PARAMETER
+EXISTENTE
+```
+
+For each relevant item, state:
+
+- exact type
+- where it is declared
+- scope when relevant
+- responsibility / what value it owns or carries
+
+Do not use vague descriptions such as "a collection of `WaveStream`" when implementation requires a concrete type such as `List<WaveStream>`.
+
+When showing assignment/data-transfer direction, avoid ambiguous arrows. Prefer either:
+
+```text
+guardar source en destination
+```
+
+or:
+
+```text
+destination = source
+```
+
+Before asking the user to implement, review the parts that actually apply:
+
+```text
+normal path
+error paths
+variable scope
+ownership / lifetime
+cleanup
+state before and after the operation
+threading / concurrency when relevant
+```
+
+Do not give an incomplete `FLUJO` and then introduce predictable requirements from this checklist only after the user has implemented it. New requirements are acceptable when genuinely new evidence appears during implementation or testing.
+
 ## Error handling
 
 When recommending an exception, provide the complete exception-related code ready to use.
@@ -186,6 +230,7 @@ Do not over-explain concepts the user already demonstrates correctly.
 - Keep the normal automated suite hardware-independent when possible.
 - Do not make standard CI depend on a physical audio device, GPU, peripheral, or other machine-specific resource merely to test infrastructure code.
 - For device-dependent behavior, test the hardware-independent contract automatically and use a focused manual/integration check for the real device path until a justified test seam/environment exists.
+- If that focused verification is implemented as a temporary device-dependent test, remove it after verification and rerun the permanent automated suite.
 
 Use these evidence categories deliberately:
 
@@ -396,8 +441,58 @@ When Markdown is intended for direct copy-paste into a project file:
 - preserve the exact Markdown source formatting
 - if the content itself contains fenced code blocks, use four backticks for the outer fence
 - never nest a triple-backtick Markdown block inside another triple-backtick block
-- prefer generating a `.md` file for large document replacements
 - do not escape Markdown syntax merely to make it display as plain text when the user intends to copy it
+
+For tracked text/documentation files:
+
+```text
+existing file + partial changes
+    -> prefer a .patch against the user's current known version
+
+new file
+    -> provide the complete file
+
+deliberate full replacement
+    -> provide the complete replacement file
+```
+
+Before generating a patch, establish the correct base version:
+
+```text
+target file unchanged locally
+    -> current pushed repository version may be used
+
+target file has uncommitted local changes
+    -> use the actual local version, an uploaded copy, or sufficiently complete session-review evidence
+
+Project/Drive snapshot
+    -> do not use as patch base when it may be stale
+```
+
+When providing a patch, have the user validate it before applying:
+
+```powershell
+git apply --check <patch-file>
+git apply <patch-file>
+```
+
+If `git apply --check` fails, do not force the patch. Inspect why the local file differs from the patch base first.
+
+## Automation threshold
+
+Do not automate a development workflow merely because it can be automated.
+
+Prefer:
+
+```text
+perform it manually
+understand the steps and failure modes
+experience the workflow enough to identify real friction
+identify repetitive work and/or human-error risk
+automate only the part with demonstrated benefit
+```
+
+A new helper script should normally wait until this threshold is met, unless automation is required for correctness, reproducibility, or safety.
 
 ## Continuity
 

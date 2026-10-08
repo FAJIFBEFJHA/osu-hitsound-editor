@@ -281,4 +281,30 @@ public class AudioPlaybackEngineTests
             "The audio output has not been initialized.",
             exception.Message);
     }
+    [Fact]
+    public void AddAudioSource_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
+    {
+        var engine = new AudioPlaybackEngine();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => engine.AddAudioSource("audio.wav"));
+
+        Assert.Equal(
+            "The audio output has not been initialized.",
+            exception.Message);
+    }
+    [Fact]
+    public void LoadTimelineAudio_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
+    {
+        var engine = new AudioPlaybackEngine();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => engine.LoadTimelineAudio("audio.wav"));
+
+        Assert.Equal(
+            "The audio output has not been initialized.",
+            exception.Message);
+    }
 }
