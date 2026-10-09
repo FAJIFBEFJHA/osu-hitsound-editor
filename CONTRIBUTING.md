@@ -70,7 +70,6 @@ Relevant project documentation:
 - [`docs/DECISIONS.md`](docs/DECISIONS.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/ROADMAP.md`](docs/ROADMAP.md)
-- [`docs/PROJECT_CONTEXT.md`](docs/PROJECT_CONTEXT.md)
 
 When documentation and implementation disagree, the current source code and tests should be treated as the implementation truth.
 
