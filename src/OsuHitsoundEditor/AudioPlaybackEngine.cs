@@ -1,3 +1,4 @@
+using NAudio.CoreAudioApi;
 using NAudio.Vorbis;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
@@ -12,6 +13,7 @@ public class AudioPlaybackEngine : IDisposable
     private WaveStream? timelineReader;
     private ISampleProvider? timelineProvider;
     private readonly object activeReadersLock = new();
+    private double timelineBaseMilliseconds;
     public void InitializeOutput()
     {
         if (outputDevice != null)
@@ -21,16 +23,30 @@ public class AudioPlaybackEngine : IDisposable
         }
         WasapiPlayerBuilder builder = new WasapiPlayerBuilder()
             .WithLowLatency();
-        outputDevice = builder.Build();
-        int targetSampleRate = outputDevice.DeviceMixFormat.SampleRate;
-
-        WaveFormat mixerFormat = WaveFormat.CreateIeeeFloatWaveFormat(targetSampleRate, 2);
-        mixer = new MixingSampleProvider(mixerFormat);
-        mixer.MixerInputEnded += OnMixerInputEnded;
-        mixer.ReadFully = true;
-
-
-        outputDevice.Init(mixer);
+        WasapiPlayer device = builder.Build();
+        int targetSampleRate;
+        WaveFormat mixerFormat;
+        MixingSampleProvider? currentMixer = null;
+        try
+        {
+            targetSampleRate = device.DeviceMixFormat.SampleRate;
+            mixerFormat = WaveFormat.CreateIeeeFloatWaveFormat(targetSampleRate, 2);
+            currentMixer = new MixingSampleProvider(mixerFormat);
+            currentMixer.MixerInputEnded += OnMixerInputEnded;
+            currentMixer.ReadFully = true;
+            device.Init(currentMixer);
+            outputDevice = device;
+            mixer =  currentMixer;
+        }
+        catch
+        {
+            if (currentMixer != null)
+            {
+                currentMixer.MixerInputEnded -= OnMixerInputEnded;
+            }
+            device.Dispose();
+            throw;
+        }
     }
     private WasapiPlayer GetInitializedOutputDevice()
     {
@@ -55,6 +71,67 @@ public class AudioPlaybackEngine : IDisposable
     {
         WasapiPlayer device = GetInitializedOutputDevice();
         device.Stop();
+        if (timelineReader != null)
+        {
+            Seek(0);
+        }
+    }
+    public void Seek(double timeMilliseconds)
+    {
+        WasapiPlayer device = GetInitializedOutputDevice();
+        if (mixer == null)
+        {
+            throw new InvalidOperationException(
+                "The audio output has not been initialized.");
+        }
+        if (timelineReader == null)
+        {
+            throw new InvalidOperationException(
+                "No timeline audio source has been loaded.");
+        }
+        if (!double.IsFinite(timeMilliseconds) || timeMilliseconds < 0 || timeMilliseconds > timelineReader.TotalTime.TotalMilliseconds)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(timeMilliseconds),
+                timeMilliseconds,
+                $"The seek position must be finite and between 0 and {timelineReader.TotalTime.TotalMilliseconds} milliseconds.");
+        }
+        bool wasPlaying = device.PlaybackState == PlaybackState.Playing;
+        device.Stop();
+        mixer.RemoveAllMixerInputs();
+        timelineProvider = null;
+        List<WaveStream> readersToDispose = new List<WaveStream>();
+        lock (activeReadersLock)
+        {
+            readersToDispose.AddRange(activeReaders.Values);
+            activeReaders.Clear();
+        }
+        foreach (var reader in readersToDispose)
+        {
+            reader.Dispose();
+        }
+        timelineReader.CurrentTime = TimeSpan.FromMilliseconds(timeMilliseconds);
+        ISampleProvider provider = NormalizeForMixer(timelineReader, mixer.WaveFormat.SampleRate);
+        mixer.AddMixerInput(provider);
+        timelineProvider = provider;
+        timelineBaseMilliseconds = timeMilliseconds;
+        if (wasPlaying)
+        {
+            device.Play();
+        }
+    }
+    public double GetTimelinePositionMilliseconds()
+    {
+        WasapiPlayer device = GetInitializedOutputDevice();
+        if (timelineReader == null)
+        {
+            throw new InvalidOperationException(
+                "No timeline audio source has been loaded.");
+        }
+
+        long renderedBytes = device.GetPosition();
+        double renderedMilliseconds = renderedBytes * 1000.0 / device.OutputWaveFormat.AverageBytesPerSecond;
+        return timelineBaseMilliseconds + renderedMilliseconds;
     }
     public void LoadTimelineAudio(string filePath)
     {
@@ -96,9 +173,15 @@ public class AudioPlaybackEngine : IDisposable
             throw;
         }
     }
-    public void AddAudioSource(string filePath)
+    public void AddAudioSource(string filePath, int volume = 100)
     {
-
+        if (volume < 0 || volume > 100)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(volume),
+                volume,
+                "The volume must be between 0 and 100.");
+        }
         if (mixer == null)
         {
             throw new InvalidOperationException(
@@ -106,10 +189,13 @@ public class AudioPlaybackEngine : IDisposable
         }
         MixingSampleProvider currentMixer = mixer;
         WaveStream reader = OpenAudioFile(filePath);
-        ISampleProvider provider;
+        ISampleProvider normalizedProvider;
+        VolumeSampleProvider volumeProvider;
         try
         {
-            provider = NormalizeForMixer(reader, currentMixer.WaveFormat.SampleRate);
+            normalizedProvider = NormalizeForMixer(reader, currentMixer.WaveFormat.SampleRate);
+            volumeProvider = new VolumeSampleProvider(normalizedProvider);
+            volumeProvider.Volume = volume / 100f;
         }
         catch
         {
@@ -118,19 +204,19 @@ public class AudioPlaybackEngine : IDisposable
         }
         lock (activeReadersLock)
         {
-            activeReaders[provider] = reader;
+            activeReaders[volumeProvider] = reader;
         }
         try
         {
-            currentMixer.AddMixerInput(provider);
+            currentMixer.AddMixerInput(volumeProvider);
         }
         catch
         {
-            currentMixer.RemoveMixerInput(provider);
+            currentMixer.RemoveMixerInput(volumeProvider);
             WaveStream? readerToDispose = null;
             lock (activeReadersLock)
             {
-                activeReaders.Remove(provider, out readerToDispose);
+                activeReaders.Remove(volumeProvider, out readerToDispose);
             }
             if (readerToDispose != null)
             {

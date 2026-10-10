@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **202/202 tests passing**
+Current full-suite checkpoint: **210/210 tests passing**
 
 Selected infrastructure:
 
@@ -188,15 +188,22 @@ Production implementation completed:
 - [x] Add a persistent timeline-audio source boundary with `LoadTimelineAudio(...)`
 - [x] Keep the timeline decoder alive after its mixer input ends so future seek can reposition it
 - [x] Add the hardware-independent `LoadTimelineAudio(...)` uninitialized-output contract test
+- [x] Verify timeline-reader lifetime through focused real-device integration checks
+- [x] Implement `Seek(double timeMilliseconds)` with fresh normalized providers and rendered-clock reset
+- [x] Implement `GetTimelinePositionMilliseconds()` using the timeline base and WASAPI rendered position
+- [x] Make `Stop()` return the loaded timeline to the beginning
+- [x] Apply per-source volume (0-100) using `VolumeSampleProvider` in `AddAudioSource(...)`
+- [x] Verify simultaneous mixing of two sources with individual volumes
+- [x] Guard partial `InitializeOutput()` failures with device disposal and event unsubscription
+- [x] Verify the successful output-initialization path through a focused device test
 
 Next:
 
-- [ ] Verify persistent timeline-audio lifetime with a focused manual/device check
-- [ ] Add seek
-- [ ] Add dynamic simultaneous hitsound triggering
-- [ ] Apply per-layer `HitSoundLayer.Volume`
-- [ ] Synchronize playback position with the editor timeline using rendered output position rather than decoder `CurrentTime`
-- [ ] Handle partial output-initialization/device errors and recovery deliberately
+- [ ] Connect one resolved `HitSoundLayer` to `SampleResolver.ResolveSample(...)` and `AudioPlaybackEngine.AddAudioSource(...)`, passing its resolved volume
+- [ ] Define playback behavior for missing custom samples and external fallback requirements
+- [ ] Add dynamic simultaneous hitsound triggering at beatmap event times
+- [ ] Connect the rendered-position timeline clock to the eventual editor timeline/UI
+- [ ] Handle device errors and runtime recovery beyond partial-initialization cleanup
 
 Do not copy the removed diagnostic spike into `src/`. Production methods are re-derived and written by the author through the normal learning workflow.
 
