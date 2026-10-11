@@ -2346,4 +2346,1236 @@ public class BeatmapTests
         Assert.Equal(4, layers[1].SampleIndex);
         Assert.Equal(70, layers[1].Volume);
     }
+
+    [Fact]
+    public void GetHitCirclesInTimeRange_WhenBeatmapIsEmpty_ReturnsEmptyList()
+    {
+        Beatmap beatmap = new Beatmap();
+
+        List<HitObject> result = beatmap.GetHitCirclesInTimeRange(0, 1000);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetHitCirclesInTimeRange_IncludesEndAndExcludesStart()
+    {
+        Beatmap beatmap = new Beatmap();
+
+        HitObject atStart = new() { ObjectType = 1, Time = 1000 };
+        HitObject first = new() { ObjectType = 1, Time = 1200 };
+        HitObject second = new() { ObjectType = 1, Time = 1400 };
+        HitObject atEnd = new() { ObjectType = 1, Time = 1600 };
+        HitObject afterEnd = new() { ObjectType = 1, Time = 1800 };
+
+        beatmap.HitObjects.AddRange(
+            new[] { atStart, first, second, atEnd, afterEnd });
+
+        List<HitObject> result =
+            beatmap.GetHitCirclesInTimeRange(1000, 1600);
+
+        Assert.Equal(3, result.Count);
+        Assert.Same(first, result[0]);
+        Assert.Same(second, result[1]);
+        Assert.Same(atEnd, result[2]);
+    }
+
+    [Fact]
+    public void GetHitCirclesInTimeRange_WhenStartEqualsEnd_ReturnsEmptyList()
+    {
+        Beatmap beatmap = new Beatmap();
+
+        beatmap.HitObjects.Add(
+            new HitObject { ObjectType = 1, Time = 1000 });
+
+        List<HitObject> result =
+            beatmap.GetHitCirclesInTimeRange(1000, 1000);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetHitCirclesInTimeRange_SkipsNonCircleObjects()
+    {
+        Beatmap beatmap = new Beatmap();
+
+        HitObject slider = new() { ObjectType = 2, Time = 1100 };
+        HitObject spinner = new() { ObjectType = 8, Time = 1200 };
+        HitObject unknown = new() { ObjectType = 0, Time = 1300 };
+        HitObject circle = new() { ObjectType = 1, Time = 1400 };
+        HitObject newComboCircle = new() { ObjectType = 5, Time = 1500 };
+
+        beatmap.HitObjects.AddRange(
+            new[] { slider, spinner, unknown, circle, newComboCircle });
+
+        List<HitObject> result =
+            beatmap.GetHitCirclesInTimeRange(1000, 1600);
+
+        Assert.Equal(2, result.Count);
+        Assert.Same(circle, result[0]);
+        Assert.Same(newComboCircle, result[1]);
+    }
+
+    [Fact]
+    public void GetHitCirclesInTimeRange_PreservesBeatmapOrder()
+    {
+        Beatmap beatmap = new Beatmap();
+
+        HitObject first = new() { ObjectType = 1, Time = 1500 };
+        HitObject second = new() { ObjectType = 1, Time = 1000 };
+        HitObject third = new() { ObjectType = 1, Time = 1200 };
+
+        beatmap.HitObjects.AddRange(new[] { first, second, third });
+
+        List<HitObject> result =
+            beatmap.GetHitCirclesInTimeRange(0, 2000);
+
+        Assert.Equal(3, result.Count);
+        Assert.Same(first, result[0]);
+        Assert.Same(second, result[1]);
+        Assert.Same(third, result[2]);
+    }
+
+    [Fact]
+    public void GetHitCirclesInTimeRange_SupportsFractionalRangeBounds()
+    {
+        Beatmap beatmap = new Beatmap();
+
+        HitObject circle = new() { ObjectType = 1, Time = 1200 };
+        beatmap.HitObjects.Add(circle);
+
+        List<HitObject> result =
+            beatmap.GetHitCirclesInTimeRange(1199.5, 1200.25);
+
+        Assert.Same(circle, Assert.Single(result));
+    }
+
+    [Fact]
+    public void GetHitCirclesInTimeRange_WhenStartIsNegative_IncludesZeroTime()
+    {
+        Beatmap beatmap = new Beatmap();
+
+        HitObject circle = new() { ObjectType = 1, Time = 0 };
+        beatmap.HitObjects.Add(circle);
+
+        List<HitObject> result =
+            beatmap.GetHitCirclesInTimeRange(-1, 0);
+
+        Assert.Same(circle, Assert.Single(result));
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void GetHitCirclesInTimeRange_WhenStartIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidStart)
+    {
+        Beatmap beatmap = new Beatmap();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetHitCirclesInTimeRange(invalidStart, 1000));
+
+        Assert.Equal(
+            "startExclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The start time must be finite.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void GetHitCirclesInTimeRange_WhenEndIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidEnd)
+    {
+        Beatmap beatmap = new Beatmap();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetHitCirclesInTimeRange(0, invalidEnd));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The end time must be finite.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void GetHitCirclesInTimeRange_WhenEndPrecedesStart_ThrowsArgumentOutOfRangeException()
+    {
+        Beatmap beatmap = new Beatmap();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetHitCirclesInTimeRange(2000, 1000));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The end time must be greater than or equal to the start time.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void GetHitCirclesInTimeRange_WhenCirclesShareTime_ReturnsAll()
+    {
+        Beatmap beatmap = new Beatmap();
+
+        HitObject first = new() { ObjectType = 1, Time = 1000 };
+        HitObject second = new() { ObjectType = 1, Time = 1000 };
+
+        beatmap.HitObjects.AddRange(new[] { first, second });
+
+        List<HitObject> result =
+            beatmap.GetHitCirclesInTimeRange(999, 1000);
+
+        Assert.Equal(2, result.Count);
+        Assert.Same(first, result[0]);
+        Assert.Same(second, result[1]);
+    }
+
+    [Fact]
+    public void GetSliderTickTimesInRange_WhenRangeCoversAllTicks_ReturnsAllInOrder()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        List<double> result =
+            beatmap.GetSliderTickTimesInRange(slider, 999, 2000);
+
+        Assert.Equal(
+            new double[] { 1125, 1250, 1375, 1625, 1750, 1875 },
+            result);
+    }
+
+    [Fact]
+    public void GetSliderTickTimesInRange_WhenRangeContainsSeveralTicks_ReturnsOnlyMatching()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        List<double> result =
+            beatmap.GetSliderTickTimesInRange(slider, 1200, 1700);
+
+        Assert.Equal(new double[] { 1250, 1375, 1625 }, result);
+    }
+
+    [Theory]
+    [InlineData(1125, 1250, 1250)]
+    [InlineData(1375, 1625, 1625)]
+    [InlineData(1750, 1875, 1875)]
+    public void GetSliderTickTimesInRange_ExcludesStartAndIncludesEnd(
+        double start,
+        double end,
+        double expected)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        List<double> result =
+            beatmap.GetSliderTickTimesInRange(slider, start, end);
+
+        Assert.Equal(expected, Assert.Single(result));
+    }
+
+    [Fact]
+    public void GetSliderTickTimesInRange_ConsecutiveIntervals_DoNotRepeatTicks()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        List<double> first =
+            beatmap.GetSliderTickTimesInRange(slider, 1000, 1250);
+
+        List<double> second =
+            beatmap.GetSliderTickTimesInRange(slider, 1250, 1750);
+
+        List<double> third =
+            beatmap.GetSliderTickTimesInRange(slider, 1750, 2000);
+
+        Assert.Equal(new double[] { 1125, 1250 }, first);
+        Assert.Equal(new double[] { 1375, 1625, 1750 }, second);
+        Assert.Equal(new double[] { 1875 }, third);
+    }
+
+    [Fact]
+    public void GetSliderTickTimesInRange_WhenRangePrecedesTicks_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        List<double> result =
+            beatmap.GetSliderTickTimesInRange(slider, 0, 1100);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetSliderTickTimesInRange_WhenRangeFollowsTicks_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        List<double> result =
+            beatmap.GetSliderTickTimesInRange(slider, 1875, 2200);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetSliderTickTimesInRange_WhenBoundsAreEqual_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        List<double> result =
+            beatmap.GetSliderTickTimesInRange(slider, 1250, 1250);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetSliderTickTimesInRange_WhenBoundsAreFractional_FiltersCorrectly()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        List<double> result =
+            beatmap.GetSliderTickTimesInRange(slider, 1124.5, 1125.25);
+
+        Assert.Equal(1125.0, Assert.Single(result));
+    }
+
+    [Fact]
+    public void GetSliderTickTimesInRange_WhenSliderHasNoTicks_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        beatmap.SliderTickRate = 1;
+
+        List<double> result =
+            beatmap.GetSliderTickTimesInRange(slider, 0, 2500);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetSliderTickTimesInRange_WhenSliderIsNull_ThrowsArgumentNullException()
+    {
+        var beatmap = new Beatmap();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                beatmap.GetSliderTickTimesInRange(null!, 0, 1000));
+
+        Assert.Equal("slider", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    public void GetSliderTickTimesInRange_WhenObjectIsNotSlider_ThrowsArgumentException(
+        int objectType)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        slider.ObjectType = objectType;
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                beatmap.GetSliderTickTimesInRange(slider, 0, 2000));
+
+        Assert.Equal("slider", exception.ParamName);
+
+        Assert.Contains(
+            "The hit object must be a slider.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void GetSliderTickTimesInRange_WhenStartIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidStart)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetSliderTickTimesInRange(
+                    slider, invalidStart, 2000));
+
+        Assert.Equal(
+            "startExclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The start time must be finite.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void GetSliderTickTimesInRange_WhenEndIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidEnd)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetSliderTickTimesInRange(
+                    slider, 1000, invalidEnd));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The end time must be finite.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void GetSliderTickTimesInRange_WhenEndPrecedesStart_ThrowsArgumentOutOfRangeException()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetSliderTickTimesInRange(
+                    slider, 2000, 1000));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The end time must be greater than or equal to the start time.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void GetSliderTickTimesInRange_WhenSliderHasNoSpans_PropagatesException()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        slider.Slides = 0;
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                beatmap.GetSliderTickTimesInRange(
+                    slider, 0, 2000));
+
+        Assert.Equal(
+            "It is not possible to calculate slider tick times because the slider must have at least one span.",
+            exception.Message);
+    }
+
+    // Test helper for slider tick range calculations
+    private static (Beatmap Beatmap, HitObject Slider) CreateSliderForTickRangeTests()
+    {
+        var beatmap = new Beatmap
+        {
+            BeatmapVersion = 14,
+            SliderMultiplier = 1.4,
+            SliderTickRate = 4
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 0,
+            BeatLength = 500,
+            IsUninherited = true
+        });
+
+        var slider = new HitObject
+        {
+            ObjectType = 2,
+            Time = 1000,
+            Length = 140,
+            Slides = 2
+        };
+
+        return (beatmap, slider);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_WhenRangeCoversAllEdges_ReturnsAllInOrder()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        var result = beatmap.GetSliderEdgeTimesInRange(
+            slider, 999, 2000);
+
+        Assert.Equal(
+            new[]
+            {
+                (EdgeIndex: 0, EdgeTime: 1000.0),
+                (EdgeIndex: 1, EdgeTime: 1500.0),
+                (EdgeIndex: 2, EdgeTime: 2000.0)
+            },
+            result);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_WhenRangeContainsRepeatAndTail_ReturnsBoth()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        var result = beatmap.GetSliderEdgeTimesInRange(
+            slider, 1200, 2000);
+
+        Assert.Equal(
+            new[]
+            {
+                (EdgeIndex: 1, EdgeTime: 1500.0),
+                (EdgeIndex: 2, EdgeTime: 2000.0)
+            },
+            result);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_ExcludesStartAndIncludesEnd()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        var result = beatmap.GetSliderEdgeTimesInRange(
+            slider, 1000, 1500);
+
+        var edge = Assert.Single(result);
+
+        Assert.Equal(1, edge.EdgeIndex);
+        Assert.Equal(1500.0, edge.EdgeTime);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_AdjacentIntervals_DoNotRepeatEdges()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        var first = beatmap.GetSliderEdgeTimesInRange(
+            slider, 999, 1000);
+
+        var second = beatmap.GetSliderEdgeTimesInRange(
+            slider, 1000, 1500);
+
+        var third = beatmap.GetSliderEdgeTimesInRange(
+            slider, 1500, 2000);
+
+        Assert.Equal(0, Assert.Single(first).EdgeIndex);
+        Assert.Equal(1, Assert.Single(second).EdgeIndex);
+        Assert.Equal(2, Assert.Single(third).EdgeIndex);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_WhenRangePrecedesSlider_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        var result = beatmap.GetSliderEdgeTimesInRange(
+            slider, 0, 999);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_WhenRangeFollowsSlider_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        var result = beatmap.GetSliderEdgeTimesInRange(
+            slider, 2000, 3000);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_WhenBoundsAreEqual_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        var result = beatmap.GetSliderEdgeTimesInRange(
+            slider, 1500, 1500);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_WhenBoundsAreFractional_FiltersCorrectly()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        var result = beatmap.GetSliderEdgeTimesInRange(
+            slider, 1499.5, 1500.25);
+
+        var edge = Assert.Single(result);
+
+        Assert.Equal(1, edge.EdgeIndex);
+        Assert.Equal(1500.0, edge.EdgeTime);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_WhenSliderHasOneSpan_ReturnsHeadAndTail()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        slider.Slides = 1;
+
+        var result = beatmap.GetSliderEdgeTimesInRange(
+            slider, 999, 2000);
+
+        Assert.Equal(
+            new[]
+            {
+                (EdgeIndex: 0, EdgeTime: 1000.0),
+                (EdgeIndex: 1, EdgeTime: 1500.0)
+            },
+            result);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_WhenSliderHasThreeSpans_IncludesFinalTail()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        slider.Slides = 3;
+
+        var result = beatmap.GetSliderEdgeTimesInRange(
+            slider, 1900, 2600);
+
+        Assert.Equal(
+            new[]
+            {
+                (EdgeIndex: 2, EdgeTime: 2000.0),
+                (EdgeIndex: 3, EdgeTime: 2500.0)
+            },
+            result);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_WhenVelocityChanges_UsesEffectiveSpanDuration()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 500,
+            BeatLength = -50,
+            IsUninherited = false
+        });
+
+        var result = beatmap.GetSliderEdgeTimesInRange(
+            slider, 999, 1600);
+
+        // SV = 2, so each span lasts 250 ms.
+        Assert.Equal(
+            new[]
+            {
+                (EdgeIndex: 0, EdgeTime: 1000.0),
+                (EdgeIndex: 1, EdgeTime: 1250.0),
+                (EdgeIndex: 2, EdgeTime: 1500.0)
+            },
+            result);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_WhenSliderIsNull_ThrowsArgumentNullException()
+    {
+        var beatmap = new Beatmap();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                beatmap.GetSliderEdgeTimesInRange(
+                    null!, 0, 2000));
+
+        Assert.Equal("slider", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    public void GetSliderEdgeTimesInRange_WhenObjectIsNotSlider_ThrowsArgumentException(
+        int objectType)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        slider.ObjectType = objectType;
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                beatmap.GetSliderEdgeTimesInRange(
+                    slider, 0, 2000));
+
+        Assert.Equal("slider", exception.ParamName);
+
+        Assert.Contains(
+            "The hit object must be a slider.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void GetSliderEdgeTimesInRange_WhenStartIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidStart)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetSliderEdgeTimesInRange(
+                    slider, invalidStart, 2000));
+
+        Assert.Equal(
+            "startExclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The start time must be finite.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void GetSliderEdgeTimesInRange_WhenEndIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidEnd)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetSliderEdgeTimesInRange(
+                    slider, 0, invalidEnd));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The end time must be finite.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void GetSliderEdgeTimesInRange_WhenEndPrecedesStart_ThrowsArgumentOutOfRangeException()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetSliderEdgeTimesInRange(
+                    slider, 2000, 1000));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The end time must be greater than or equal to the start time.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void GetSliderEdgeTimesInRange_WhenSlidesIsInvalid_ThrowsInvalidOperationException(
+        int slides)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        slider.Slides = slides;
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                beatmap.GetSliderEdgeTimesInRange(
+                    slider, 0, 2000));
+
+        Assert.Equal(
+            "It is not possible to calculate a slider edge time because the slider must have at least one span.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_WhenBeatmapIsEmpty_ReturnsEmpty()
+    {
+        var beatmap = new Beatmap();
+
+        List<TimedHitSoundEvent> result =
+            beatmap.GetTimedHitSoundEventsInRange(0, 2000);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_MixedObjects_ReturnsChronologicalEvents()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        HitObject laterCircle = new()
+        {
+            ObjectType = 1,
+            Time = 1800
+        };
+
+        HitObject earlierCircle = new()
+        {
+            ObjectType = 1,
+            Time = 1250
+        };
+
+        beatmap.HitObjects.AddRange(
+            new[] { laterCircle, slider, earlierCircle });
+
+        List<TimedHitSoundEvent> result =
+            beatmap.GetTimedHitSoundEventsInRange(999, 2000);
+
+        Assert.Equal(11, result.Count);
+
+        Assert.Equal(
+            new double[]
+            {
+                1000, 1125, 1250, 1250, 1375,
+                1500, 1625, 1750, 1800, 1875, 2000
+            },
+            result.Select(item => item.Time));
+
+        Assert.Equal(
+            new[]
+            {
+                HitSoundEventType.SliderEdge,
+                HitSoundEventType.SliderTick,
+                HitSoundEventType.HitCircle,
+                HitSoundEventType.SliderTick,
+                HitSoundEventType.SliderTick,
+                HitSoundEventType.SliderEdge,
+                HitSoundEventType.SliderTick,
+                HitSoundEventType.SliderTick,
+                HitSoundEventType.HitCircle,
+                HitSoundEventType.SliderTick,
+                HitSoundEventType.SliderEdge
+            },
+            result.Select(item => item.EventType));
+
+        Assert.Same(slider, result[0].HitObject);
+        Assert.Same(earlierCircle, result[2].HitObject);
+        Assert.Same(laterCircle, result[8].HitObject);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_WhenCircleAndTickShareTime_PreservesStableOrder()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        HitObject firstCircle = new()
+        {
+            ObjectType = 1,
+            Time = 1250
+        };
+
+        HitObject secondCircle = new()
+        {
+            ObjectType = 1,
+            Time = 1250
+        };
+
+        beatmap.HitObjects.AddRange(
+            new[] { firstCircle, slider, secondCircle });
+
+        List<TimedHitSoundEvent> result =
+            beatmap.GetTimedHitSoundEventsInRange(1249, 1250);
+
+        Assert.Equal(3, result.Count);
+
+        Assert.Same(firstCircle, result[0].HitObject);
+        Assert.Same(secondCircle, result[1].HitObject);
+        Assert.Same(slider, result[2].HitObject);
+
+        Assert.Equal(HitSoundEventType.HitCircle, result[0].EventType);
+        Assert.Equal(HitSoundEventType.HitCircle, result[1].EventType);
+        Assert.Equal(HitSoundEventType.SliderTick, result[2].EventType);
+
+        Assert.All(result, item => Assert.Equal(1250.0, item.Time));
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_WhenSliderHeadsShareTime_PreservesSliderOrder()
+    {
+        var (beatmap, firstSlider) = CreateSliderForTickRangeTests();
+
+        HitObject secondSlider = new()
+        {
+            ObjectType = 2,
+            Time = 1000,
+            Length = 140,
+            Slides = 2
+        };
+
+        beatmap.HitObjects.AddRange(
+            new[] { firstSlider, secondSlider });
+
+        List<TimedHitSoundEvent> result =
+            beatmap.GetTimedHitSoundEventsInRange(999, 1000);
+
+        Assert.Equal(2, result.Count);
+
+        Assert.Same(firstSlider, result[0].HitObject);
+        Assert.Same(secondSlider, result[1].HitObject);
+
+        Assert.All(result, item =>
+        {
+            Assert.Equal(HitSoundEventType.SliderEdge, item.EventType);
+            Assert.Equal(0, item.EdgeIndex);
+            Assert.Equal(1000.0, item.Time);
+        });
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_SliderEvents_PreserveEdgeIndices()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+        beatmap.HitObjects.Add(slider);
+
+        List<TimedHitSoundEvent> result =
+            beatmap.GetTimedHitSoundEventsInRange(999, 2000);
+
+        List<TimedHitSoundEvent> edges = result
+            .Where(item => item.EventType == HitSoundEventType.SliderEdge)
+            .ToList();
+
+        List<TimedHitSoundEvent> ticks = result
+            .Where(item => item.EventType == HitSoundEventType.SliderTick)
+            .ToList();
+
+        Assert.Equal(3, edges.Count);
+        Assert.Equal(6, ticks.Count);
+
+        Assert.Equal(
+            new int?[] { 0, 1, 2 },
+            edges.Select(item => item.EdgeIndex));
+
+        Assert.Equal(
+            new double[] { 1000, 1500, 2000 },
+            edges.Select(item => item.Time));
+
+        Assert.All(ticks, item =>
+        {
+            Assert.Null(item.EdgeIndex);
+            Assert.Same(slider, item.HitObject);
+        });
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_WhenOnlyCircleExists_ReturnsCircleEvent()
+    {
+        var beatmap = new Beatmap();
+
+        HitObject circle = new()
+        {
+            ObjectType = 1,
+            Time = 500
+        };
+
+        beatmap.HitObjects.Add(circle);
+
+        TimedHitSoundEvent result = Assert.Single(
+            beatmap.GetTimedHitSoundEventsInRange(499, 500));
+
+        Assert.Equal(500.0, result.Time);
+        Assert.Same(circle, result.HitObject);
+        Assert.Equal(HitSoundEventType.HitCircle, result.EventType);
+        Assert.Null(result.EdgeIndex);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_IgnoresNonDiscreteHitObjects()
+    {
+        var beatmap = new Beatmap();
+
+        beatmap.HitObjects.Add(new HitObject
+        {
+            ObjectType = 8,
+            Time = 500
+        });
+
+        beatmap.HitObjects.Add(new HitObject
+        {
+            ObjectType = 0,
+            Time = 1000
+        });
+
+        List<TimedHitSoundEvent> result =
+            beatmap.GetTimedHitSoundEventsInRange(0, 2000);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_WhenNoEventsMatch_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+        beatmap.HitObjects.Add(slider);
+
+        List<TimedHitSoundEvent> result =
+            beatmap.GetTimedHitSoundEventsInRange(0, 900);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_ExcludesStartAndIncludesEnd()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+        beatmap.HitObjects.Add(slider);
+
+        List<TimedHitSoundEvent> result =
+            beatmap.GetTimedHitSoundEventsInRange(1000, 1500);
+
+        Assert.Equal(
+            new double[] { 1125, 1250, 1375, 1500 },
+            result.Select(item => item.Time));
+
+        TimedHitSoundEvent last = result[^1];
+
+        Assert.Equal(HitSoundEventType.SliderEdge, last.EventType);
+        Assert.Equal(1, last.EdgeIndex);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_AdjacentIntervals_DoNotRepeatEvents()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+        beatmap.HitObjects.Add(slider);
+
+        var first = beatmap.GetTimedHitSoundEventsInRange(
+            999, 1500);
+
+        var second = beatmap.GetTimedHitSoundEventsInRange(
+            1500, 2000);
+
+        Assert.Equal(
+            new double[] { 1000, 1125, 1250, 1375, 1500 },
+            first.Select(item => item.Time));
+
+        Assert.Equal(
+            new double[] { 1625, 1750, 1875, 2000 },
+            second.Select(item => item.Time));
+
+        Assert.Equal(9, first.Count + second.Count);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_WhenBoundsAreEqual_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+        beatmap.HitObjects.Add(slider);
+
+        List<TimedHitSoundEvent> result =
+            beatmap.GetTimedHitSoundEventsInRange(1500, 1500);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_FractionalBounds_SelectCorrectTick()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+        beatmap.HitObjects.Add(slider);
+
+        TimedHitSoundEvent result = Assert.Single(
+            beatmap.GetTimedHitSoundEventsInRange(
+                1124.5, 1125.25));
+
+        Assert.Equal(1125.0, result.Time);
+        Assert.Equal(HitSoundEventType.SliderTick, result.EventType);
+        Assert.Same(slider, result.HitObject);
+        Assert.Null(result.EdgeIndex);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_WhenSliderHasNoTicks_ReturnsEdgesOnly()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        beatmap.SliderTickRate = 1;
+        beatmap.HitObjects.Add(slider);
+
+        List<TimedHitSoundEvent> result =
+            beatmap.GetTimedHitSoundEventsInRange(999, 2000);
+
+        Assert.Equal(3, result.Count);
+
+        Assert.All(result, item =>
+            Assert.Equal(
+                HitSoundEventType.SliderEdge,
+                item.EventType));
+
+        Assert.Equal(
+            new double[] { 1000, 1500, 2000 },
+            result.Select(item => item.Time));
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_WhenCircleIsAtZero_IncludesIt()
+    {
+        var beatmap = new Beatmap();
+
+        HitObject circle = new()
+        {
+            ObjectType = 1,
+            Time = 0
+        };
+
+        beatmap.HitObjects.Add(circle);
+
+        TimedHitSoundEvent result = Assert.Single(
+            beatmap.GetTimedHitSoundEventsInRange(-1, 0));
+
+        Assert.Same(circle, result.HitObject);
+        Assert.Equal(0.0, result.Time);
+        Assert.Equal(HitSoundEventType.HitCircle, result.EventType);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_ComboFlags_PreserveEventTypes()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        slider.ObjectType = 2 | 4;
+
+        HitObject circle = new()
+        {
+            ObjectType = 1 | 4,
+            Time = 1200
+        };
+
+        beatmap.HitObjects.AddRange(new[] { slider, circle });
+
+        List<TimedHitSoundEvent> result =
+            beatmap.GetTimedHitSoundEventsInRange(999, 1200);
+
+        Assert.Equal(3, result.Count);
+
+        Assert.Equal(HitSoundEventType.SliderEdge, result[0].EventType);
+        Assert.Equal(HitSoundEventType.SliderTick, result[1].EventType);
+        Assert.Equal(HitSoundEventType.HitCircle, result[2].EventType);
+
+        Assert.Same(circle, result[2].HitObject);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_WithoutSliderTimingPoint_PropagatesException()
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        beatmap.TimingPoints.Clear();
+        beatmap.HitObjects.Add(slider);
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                beatmap.GetTimedHitSoundEventsInRange(0, 2000));
+
+        Assert.Equal(
+            "It is not possible to calculate the slider span duration without an active uninherited timing point.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void GetTimedHitSoundEventsInRange_WhenSliderHasInvalidSlides_PropagatesException(
+        int slides)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+
+        slider.Slides = slides;
+        beatmap.HitObjects.Add(slider);
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                beatmap.GetTimedHitSoundEventsInRange(0, 2000));
+
+        Assert.Equal(
+            "It is not possible to calculate a slider edge time because the slider must have at least one span.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void GetTimedHitSoundEventsInRange_WhenStartIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidStart)
+    {
+        var beatmap = new Beatmap();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetTimedHitSoundEventsInRange(
+                    invalidStart, 2000));
+
+        Assert.Equal(
+            "startExclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Equal(invalidStart, exception.ActualValue);
+
+        Assert.Contains(
+            "The start time must be finite.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void GetTimedHitSoundEventsInRange_WhenEndIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidEnd)
+    {
+        var beatmap = new Beatmap();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetTimedHitSoundEventsInRange(
+                    0, invalidEnd));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Equal(invalidEnd, exception.ActualValue);
+
+        Assert.Contains(
+            "The end time must be finite.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void GetTimedHitSoundEventsInRange_WhenEndPrecedesStart_ThrowsArgumentOutOfRangeException()
+    {
+        var beatmap = new Beatmap();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetTimedHitSoundEventsInRange(
+                    2000, 1000));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Equal(1000.0, exception.ActualValue);
+
+        Assert.Contains(
+            "The end time must be greater than or equal to the start time.",
+            exception.Message);
+    }
+
 }

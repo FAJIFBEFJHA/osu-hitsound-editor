@@ -10,23 +10,23 @@ Its purpose is to provide a visual reference for how `.osu` data is parsed, how 
 
 ## Current Stage
 
-Hitsound Resolution is complete. The project is currently being prepared for public development, with Physical Sample Resolution planned next.
+Parsing, logical hitsound resolution, and the current physical sample-resolution boundary are complete. The project is in **Audio Infrastructure**.
 
-Current checkpoint:
+Verified checkpoint (2026-10-11):
 
 ```text
-100/100 automated tests passing
+500/500 automated tests passing (full suite)
 ```
 
-The parser, timing resolution, logical hitsound resolution, slider edge/body behavior, and slider tick behavior are implemented.
+The audio engine supports decoding, normalized mixing, timeline seek, and rendered-position reporting. `HitSoundPlaybackService` resolves and immediately adds discrete hit-circle, slider-edge, and slider-tick samples to the mixer. `Beatmap` can enumerate these events chronologically through `TimedHitSoundEvent`.
 
-Physical sample-file discovery and filename resolution have not been implemented yet. Those belong to the **Physical Sample Resolution** stage.
+Precise scheduling, continuous slider-body audio, editor UI, export, and optimization remain future work. The presence of a timestamp on an event does not yet imply scheduled playback.
 
 ---
 
 ## Current Architecture Overview
 
-The current implementation is intentionally small.
+The diagram below shows the core parsing and logical-resolution path. Physical sample lookup, discrete-event selection, and playback are described in the later sections.
 
 ```mermaid
 flowchart LR
@@ -56,20 +56,22 @@ The main responsibilities are currently:
 - `HitSample` stores the sample information attached to a hit object.
 - `SliderEdge` stores hitsound information for the head, repeats, and tail of a slider.
 - `HitSoundLayer` represents one logical sound layer after inheritance and timing rules have been resolved.
+- `SampleResolver` maps logical layers to physical beatmap samples or explicit missing/fallback outcomes.
+- `AudioPlaybackEngine` owns the output device, timeline source, mixer, and transient audio-reader lifetimes.
+- `HitSoundPlaybackService` resolves hitsound layers and dispatches `HitCircle`, `SliderEdge`, and `SliderTick` playback immediately.
+- `TimedHitSoundEvent` stores an event time, `HitObject`, `HitSoundEventType`, and optional `EdgeIndex`.
+- `HitCirclePlaybackCursor` tracks hit-circle event progress and can reset its position after seeking.
 
-The current design keeps parsing and resolution separate:
+Parsing, logical resolution, physical sample lookup, event selection, and audio output remain separate:
 
 ```text
-.osu text
-    ↓
-BeatmapLoader
-    ↓
-parsed Beatmap data
-    ↓
-Beatmap resolution methods
-    ↓
-logical HitSoundLayer values
+.osu text -> BeatmapLoader -> Beatmap
+Beatmap -> HitSoundLayer -> SampleResolver -> SampleResolutionResult
+Beatmap -> TimedHitSoundEvent -> HitSoundPlaybackService
+HitSoundPlaybackService -> AudioPlaybackEngine (found local samples only)
 ```
+
+`SampleResolutionResult` can indicate a required external fallback or a missing custom file. Neither outcome is treated as an available local audio path.
 
 ---
 
@@ -654,49 +656,37 @@ flowchart TD
 
     K --> L[HitSoundLayer]
 
-    L -. future .-> M[Physical sample resolution]
-    M -. future .-> N[Audio / timeline / export]
+    L --> M[SampleResolver]
+    M --> N[SampleResolutionResult]
+    C --> O[TimedHitSoundEvent selection]
+    O --> P[HitSoundPlaybackService]
+    N --> P
+    P --> Q[AudioPlaybackEngine mixer]
+    Q -. future .-> R[Time-accurate scheduling / editor UI]
+    C -. future .-> S[Export / optimization]
 ```
 
-The dashed part of the diagram is intentionally not implemented yet.
+The audio path currently triggers selected hitsounds immediately. The dashed branches indicate future scheduling, editor, export, and optimization functionality.
 
 ---
 
 ## Current Architectural Boundary
 
-The project currently stops at the logical hitsound representation.
+The current implementation reaches discrete hitsound playback without implementing an editor timeline or time-accurate scheduler.
 
 Implemented:
 
 ```text
-.osu parsing
-    ↓
-timing resolution
-    ↓
-effective hitsound values
-    ↓
-logical HitSoundLayer
+.osu parsing -> logical HitSoundLayer -> SampleResolver
+            -> SampleResolutionResult -> immediate mixer input (if found)
+
+Beatmap -> GetTimedHitSoundEventsInRange(...) -> timed discrete events
+TimedHitSoundEvent -> PlayTimedHitSoundEvent(...) -> appropriate playback method
 ```
 
-Not implemented yet:
+`HitCirclePlaybackCursor` tracks only hit-circle progress; the unified event representation does not yet have a complete playback cursor. Range playback helpers dispatch all matching events immediately rather than delaying individual sounds until their timestamps.
 
-```text
-physical sample-file discovery
-    ↓
-physical filename resolution
-    ↓
-audio playback
-    ↓
-timeline editing
-    ↓
-export
-    ↓
-optimization
-```
-
-This boundary is intentional.
-
-The project should understand the logical behavior of the beatmap before physical sample files, playback, export, and optimization are layered on top.
+Not implemented yet: precise audio-clock scheduling, continuous slider-body playback, editor timeline/UI, deterministic export/reload/equivalence verification, and sample optimization.
 
 ---
 
@@ -707,7 +697,7 @@ The project uses **xUnit** for automated testing.
 Current checkpoint:
 
 ```text
-100/100 tests passing
+500/500 tests passing (full suite, 2026-10-11)
 ```
 
 The test suite currently covers:
@@ -740,6 +730,11 @@ slider tick times
 normal and reversed slider spans
 SliderTick hitsound layers
 invalid-state and boundary cases
+physical sample filenames, banked and universal fallback, explicit custom-file outcomes
+audio opening, normalization, mixer control, timeline seeking and playback volume
+hit-circle, slider-edge, and slider-tick playback and interval selection
+hit-circle cursor advancement and seeking
+chronological TimedHitSoundEvent generation and playback dispatch
 ```
 
 The tests are located under:
@@ -750,6 +745,9 @@ tests/
     ├── BeatmapTests.cs
     ├── BeatmapLoaderTests.cs
     ├── TestOrganizationTests.cs
+    ├── HitCirclePlaybackCursorTests.cs
+    ├── HitSoundPlaybackServiceTests.cs
+    ├── AudioPlaybackEngineTests.cs
     └── TestData/
         └── basic-beatmap.osu
 ```
@@ -764,37 +762,19 @@ dotnet test
 
 ## Planned Development Stages
 
-The following sections describe responsibilities that are planned but not yet implemented.
-
-They are written as responsibilities rather than fixed class names because the project intentionally avoids committing to abstractions before they are needed.
+The following sections retain the original stage-level design goals. Physical sample lookup and substantial audio infrastructure are now implemented; remaining items are identified below. Refer to `docs/ROADMAP.md` for current task status.
 
 ### Physical Sample Resolution
 
-Planned responsibilities:
+Completed at the present lookup boundary: standard and slider sample filename resolution, banked/universal lookup, and explicit found/missing/fallback outcomes.
 
-```text
-discover sample files used by the beatmap
-resolve osu! sample filenames
-separate logical sample identity from physical representation
-define a stable logical SampleId
-load required sample metadata
-handle missing samples predictably
-```
+Deferred until needed: defining a stable logical `SampleId` and loading additional sample metadata.
 
 ### Audio Infrastructure
 
-Planned responsibilities:
+Implemented: NAudio decoding, output/mixer lifetime, timeline playback and seek, per-source volume, discrete hitsound dispatch, event-range selection, and chronological event representation.
 
-```text
-decode required audio formats
-play beatmap audio
-seek
-play hitsound layers together
-synchronize playback with the editor timeline
-handle audio-device errors
-```
-
-An external open-source .NET library may be used for low-level audio infrastructure after independent evaluation.
+Remaining: integration of chronological playback progress, accurate scheduled triggering, continuous slider-body audio, editor-timeline integration, and runtime device-error recovery. NAudio is the selected external audio infrastructure.
 
 ### Desktop Editor and Timeline
 

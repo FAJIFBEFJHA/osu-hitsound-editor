@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **210/210 tests passing**
+Current full-suite checkpoint: **500/500 tests passing** (full suite, 2026-10-11)
 
 Selected infrastructure:
 
@@ -197,11 +197,23 @@ Production implementation completed:
 - [x] Guard partial `InitializeOutput()` failures with device disposal and event unsubscription
 - [x] Verify the successful output-initialization path through a focused device test
 
+Discrete hitsound playback and event selection completed:
+
+- [x] Resolve one `HitSoundLayer` through `SampleResolver.ResolveSample(...)` and add a found audio source with its layer volume
+- [x] Preserve distinct missing-custom and external-fallback outcomes without trying to play missing files
+- [x] Add `PlayHitSoundLayers(...)`, `PlayHitCircle(...)`, `PlaySliderEdge(...)`, and `PlaySliderTick(...)`
+- [x] Select hit circles, slider edges, and slider ticks in half-open `(start, end]` timeline intervals
+- [x] Implement `HitCirclePlaybackCursor.AdvanceTo(...)` and `SeekTo(...)` for hit-circle playback progress
+- [x] Add time-range playback helpers for circles, slider edges, and slider ticks
+- [x] Define `TimedHitSoundEvent` / `HitSoundEventType` and produce chronological discrete events with `Beatmap.GetTimedHitSoundEventsInRange(...)`
+- [x] Route a discrete event to its appropriate playback method with `PlayTimedHitSoundEvent(...)`
+- [x] Verify all behavior with the complete 500-test suite
+
 Next:
 
-- [ ] Connect one resolved `HitSoundLayer` to `SampleResolver.ResolveSample(...)` and `AudioPlaybackEngine.AddAudioSource(...)`, passing its resolved volume
-- [ ] Define playback behavior for missing custom samples and external fallback requirements
-- [ ] Add dynamic simultaneous hitsound triggering at beatmap event times
+- [ ] Connect chronological `TimedHitSoundEvent` processing to playback progress, with explicit seek and pause semantics
+- [ ] Design accurate audio-clock scheduling; current playback methods add sources immediately and are not a time-accurate scheduler
+- [ ] Implement continuous slider-body playback separately from discrete slider edges and ticks
 - [ ] Connect the rendered-position timeline clock to the eventual editor timeline/UI
 - [ ] Handle device errors and runtime recovery beyond partial-initialization cleanup
 

@@ -147,6 +147,52 @@ public class Beatmap
         }
         return slider.Time + GetSliderSpanDuration(slider) * edgeIndex;
     }
+    public List<(int EdgeIndex, double EdgeTime)> GetSliderEdgeTimesInRange(HitObject slider, double startExclusiveMilliseconds, double endInclusiveMilliseconds)
+    {
+        ArgumentNullException.ThrowIfNull(slider);
+        if (slider.IsSlider == false)
+        {
+            throw new ArgumentException(
+                "The hit object must be a slider.",
+                nameof(slider));
+        }
+        if (!double.IsFinite(startExclusiveMilliseconds))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(startExclusiveMilliseconds),
+                startExclusiveMilliseconds,
+                "The start time must be finite.");
+        }
+        if (!double.IsFinite(endInclusiveMilliseconds))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endInclusiveMilliseconds),
+                endInclusiveMilliseconds,
+                "The end time must be finite.");
+        }
+        if (endInclusiveMilliseconds < startExclusiveMilliseconds)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endInclusiveMilliseconds),
+                endInclusiveMilliseconds,
+                "The end time must be greater than or equal to the start time.");
+        }
+        if (slider.Slides <= 0)
+        {
+            throw new InvalidOperationException(
+                "It is not possible to calculate a slider edge time because the slider must have at least one span.");
+        }
+        List<(int EdgeIndex, double EdgeTime)> matchingEdges = new List<(int EdgeIndex, double EdgeTime)>();
+        for (int edgeIndex = 0; edgeIndex <= slider.Slides; edgeIndex++)
+        {
+            double edgeTime = GetSliderEdgeTime(slider, edgeIndex);
+            if (edgeTime > startExclusiveMilliseconds && edgeTime <= endInclusiveMilliseconds)
+            {
+                matchingEdges.Add((edgeIndex, edgeTime));
+            }
+        }
+        return matchingEdges;
+    }
     public double GetSliderTickDistance(HitObject slider)
     {
         if (SliderTickRate <= 0)
@@ -208,6 +254,47 @@ public class Beatmap
             tickTimes.AddRange(spanTickTimes);
         }
         return tickTimes;
+    }
+    public List<double> GetSliderTickTimesInRange(HitObject slider, double startExclusiveMilliseconds, double endInclusiveMilliseconds)
+    {
+        ArgumentNullException.ThrowIfNull(slider);
+        if (slider.IsSlider == false)
+        {
+            throw new ArgumentException(
+                "The hit object must be a slider.",
+                nameof(slider));
+        }
+        if (!double.IsFinite(startExclusiveMilliseconds))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(startExclusiveMilliseconds),
+                startExclusiveMilliseconds,
+                "The start time must be finite.");
+        }
+        if (!double.IsFinite(endInclusiveMilliseconds))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endInclusiveMilliseconds),
+                endInclusiveMilliseconds,
+                "The end time must be finite.");
+        }
+        if (endInclusiveMilliseconds < startExclusiveMilliseconds)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endInclusiveMilliseconds),
+                endInclusiveMilliseconds,
+                "The end time must be greater than or equal to the start time.");
+        }
+        List<double> tickTimes = GetSliderTickTimes(slider);
+        List<double> matchingTimes = new List<double>();
+        foreach (var tickTime in tickTimes)
+        {
+            if (tickTime > startExclusiveMilliseconds && tickTime <= endInclusiveMilliseconds)
+            {
+                matchingTimes.Add(tickTime);
+            }
+        }
+        return matchingTimes;
     }
     // SAMPLE SETS
     public SampleSetType GetSampleSetType(int sampleSet)
@@ -402,8 +489,8 @@ public class Beatmap
         SampleSetType normalSetType = GetEffectiveNormalSetType(sliderEdge, time);
         SampleSetType additionSetType = GetEffectiveAdditionSetType(sliderEdge, time);
         TimingPoint? sampleTimingPoint = GetSampleTimingPoint(time);
-        int sampleIndex = sampleTimingPoint ?.SampleIndex ?? 0;
-        int volume = sampleTimingPoint ?.Volume ?? 100;
+        int sampleIndex = sampleTimingPoint?.SampleIndex ?? 0;
+        int volume = sampleTimingPoint?.Volume ?? 100;
 
         foreach (var hitSoundType in hitSoundTypes)
         {
@@ -477,5 +564,113 @@ public class Beatmap
         sliderTick.Volume = volume;
         hitSoundLayers.Add(sliderTick);
         return hitSoundLayers;
+    }
+    public List<HitObject> GetHitCirclesInTimeRange(double startExclusiveMilliseconds, double endInclusiveMilliseconds)
+    {
+        if (!double.IsFinite(startExclusiveMilliseconds))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(startExclusiveMilliseconds),
+                startExclusiveMilliseconds,
+                "The start time must be finite.");
+        }
+        if (!double.IsFinite(endInclusiveMilliseconds))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endInclusiveMilliseconds),
+                endInclusiveMilliseconds,
+                "The end time must be finite.");
+        }
+        if (endInclusiveMilliseconds < startExclusiveMilliseconds)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endInclusiveMilliseconds),
+                endInclusiveMilliseconds,
+                "The end time must be greater than or equal to the start time.");
+        }
+        List<HitObject> hitCircles = new List<HitObject>();
+        foreach (var hitObject in HitObjects)
+        {
+            if (hitObject.IsHitCircle == false)
+            {
+                continue;
+            }
+            if (hitObject.Time > startExclusiveMilliseconds && hitObject.Time <= endInclusiveMilliseconds)
+            {
+                hitCircles.Add(hitObject);
+            }
+
+        }
+        return hitCircles;
+    }
+    public List<TimedHitSoundEvent> GetTimedHitSoundEventsInRange(double startExclusiveMilliseconds, double endInclusiveMilliseconds)
+    {
+        if (!double.IsFinite(startExclusiveMilliseconds))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(startExclusiveMilliseconds),
+                startExclusiveMilliseconds,
+                "The start time must be finite.");
+        }
+        if (!double.IsFinite(endInclusiveMilliseconds))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endInclusiveMilliseconds),
+                endInclusiveMilliseconds,
+                "The end time must be finite.");
+        }
+        if (endInclusiveMilliseconds < startExclusiveMilliseconds)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endInclusiveMilliseconds),
+                endInclusiveMilliseconds,
+                "The end time must be greater than or equal to the start time.");
+        }
+        List<TimedHitSoundEvent> events = new List<TimedHitSoundEvent>();
+        List<HitObject> circles = GetHitCirclesInTimeRange(startExclusiveMilliseconds, endInclusiveMilliseconds);
+        foreach (var circle in circles)
+        {
+            TimedHitSoundEvent soundEvent = new TimedHitSoundEvent
+            {
+                Time = circle.Time,
+                HitObject = circle,
+                EventType = HitSoundEventType.HitCircle,
+                EdgeIndex = null
+            };
+            events.Add(soundEvent);
+        }
+        foreach (var hitObject in HitObjects)
+        {
+            if (hitObject.IsSlider == false)
+            {
+                continue;
+            }
+            List<(int EdgeIndex, double EdgeTime)> edges = GetSliderEdgeTimesInRange(hitObject, startExclusiveMilliseconds, endInclusiveMilliseconds);
+            foreach (var edge in edges)
+            {
+                TimedHitSoundEvent soundEvent = new TimedHitSoundEvent
+                {
+                    Time = edge.EdgeTime,
+                    HitObject = hitObject,
+                    EventType = HitSoundEventType.SliderEdge,
+                    EdgeIndex = edge.EdgeIndex
+                };
+                events.Add(soundEvent);
+            }
+            List<double> tickTimes = GetSliderTickTimesInRange(hitObject, startExclusiveMilliseconds, endInclusiveMilliseconds);
+            foreach(var tickTimed in tickTimes)
+            {
+                TimedHitSoundEvent soundEvent = new TimedHitSoundEvent
+                {
+                    Time = tickTimed,
+                    HitObject = hitObject,
+                    EventType = HitSoundEventType.SliderTick,
+                    EdgeIndex = null
+                };
+                events.Add(soundEvent);
+            }
+        }
+        List<TimedHitSoundEvent> sortedEvents = events.OrderBy(soundEvent => soundEvent.Time).ToList();
+        return sortedEvents;
     }
 }

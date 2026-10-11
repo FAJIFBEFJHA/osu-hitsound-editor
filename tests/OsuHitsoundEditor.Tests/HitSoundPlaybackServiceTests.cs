@@ -1,0 +1,4799 @@
+using System.Reflection;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
+using OsuHitsoundEditor;
+
+namespace OsuHitsoundEditor.Tests;
+
+public class HitSoundPlaybackServiceTests
+{
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PlayHitSoundLayer_WhenSampleExists_PlaysAtLayerVolume(bool custom)
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            Guid.NewGuid().ToString());
+
+        Directory.CreateDirectory(directory);
+
+        try
+        {
+            string filename = custom
+                ? "custom.wav"
+                : "normal-hitnormal.wav";
+
+            string path = Path.Combine(directory, filename);
+            var format = new WaveFormat(44100, 16, 1);
+
+            using (var writer = new WaveFileWriter(path, format))
+            {
+                byte[] audio = new byte[format.BlockAlign * 100];
+
+                for (int i = 0; i < audio.Length; i += 2)
+                {
+                    audio[i] = 0;
+                    audio[i + 1] = 64;
+                }
+
+                writer.Write(audio, 0, audio.Length);
+            }
+
+            HitSoundLayer layer = new HitSoundLayer
+            {
+                Type = custom ? HitSoundType.Custom : HitSoundType.Normal,
+                Filename = custom ? filename : string.Empty,
+                SampleSet = SampleSetType.Normal,
+                SampleIndex = 1,
+                Volume = 50
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            var mixer = new MixingSampleProvider(
+                WaveFormat.CreateIeeeFloatWaveFormat(44100, 2));
+
+            FieldInfo? mixerField = typeof(AudioPlaybackEngine).GetField(
+                "mixer",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.NotNull(mixerField);
+            mixerField.SetValue(engine, mixer);
+
+            SampleResolutionResult result = service.PlayHitSoundLayer(
+                layer, directory, resolver, engine);
+
+            Assert.Equal(
+                custom
+                    ? SampleResolutionOutcome.CustomSampleFound
+                    : SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(path, result.ResolvedPath);
+
+            float[] output = new float[2];
+            int samplesRead = mixer.Read(output.AsSpan());
+
+            Assert.Equal(2, samplesRead);
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PlayHitSoundLayer_WhenSampleIsMissing_DoesNotAttemptPlayback(bool custom)
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            Guid.NewGuid().ToString());
+
+        Directory.CreateDirectory(directory);
+
+        try
+        {
+            HitSoundLayer layer = new HitSoundLayer
+            {
+                Type = custom ? HitSoundType.Custom : HitSoundType.Normal,
+                Filename = custom ? "missing.wav" : string.Empty,
+                SampleSet = SampleSetType.Normal,
+                SampleIndex = 1,
+                Volume = 50
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            SampleResolutionResult result = service.PlayHitSoundLayer(
+                layer, directory, resolver, engine);
+
+            Assert.Equal(
+                custom
+                    ? SampleResolutionOutcome.CustomSampleMissing
+                    : SampleResolutionOutcome.ExternalFallbackRequired,
+                result.Outcome);
+
+            Assert.Null(result.ResolvedPath);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitSoundLayer_WhenLayerIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayHitSoundLayer(
+                    null!, "beatmap", resolver, engine));
+
+        Assert.Equal("layer", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayHitSoundLayer_WhenResolverIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var layer = new HitSoundLayer();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayHitSoundLayer(
+                    layer, "beatmap", null!, engine));
+
+        Assert.Equal("resolver", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayHitSoundLayer_WhenEngineIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var layer = new HitSoundLayer();
+        var resolver = new SampleResolver();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayHitSoundLayer(
+                    layer, "beatmap", resolver, null!));
+
+        Assert.Equal("engine", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PlayHitSoundLayer_WhenDirectoryIsInvalid_ThrowsArgumentException(
+        string? directory)
+    {
+        var service = new HitSoundPlaybackService();
+        var layer = new HitSoundLayer();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlayHitSoundLayer(
+                    layer, directory!, resolver, engine));
+
+        Assert.Equal("beatmapDirectory", exception.ParamName);
+        Assert.Contains(
+            "The beatmap directory must not be empty.",
+            exception.Message);
+    }
+
+    // Multiple-layer playback
+    [Fact]
+    public void PlayHitSoundLayers_WhenListIsEmpty_ReturnsEmptyList()
+    {
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        List<SampleResolutionResult> results =
+            service.PlayHitSoundLayers(
+                Array.Empty<HitSoundLayer>(),
+                "beatmap",
+                resolver,
+                engine);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void PlayHitSoundLayers_WhenTwoSamplesExist_MixesIndividualVolumes()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "normal-hitnormal.wav");
+
+            string clapPath = Path.Combine(
+                directory, "normal-hitclap.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+            WriteHalfAmplitudeWav(clapPath);
+
+            HitSoundLayer[] layers =
+            {
+                new()
+                {
+                    Type = HitSoundType.Normal,
+                    SampleSet = SampleSetType.Normal,
+                    SampleIndex = 1,
+                    Volume = 50
+                },
+                new()
+                {
+                    Type = HitSoundType.Clap,
+                    SampleSet = SampleSetType.Normal,
+                    SampleIndex = 1,
+                    Volume = 25
+                }
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlayHitSoundLayers(
+                    layers, directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.All(results, result =>
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome));
+
+            Assert.Equal(normalPath, results[0].ResolvedPath);
+            Assert.Equal(clapPath, results[1].ResolvedPath);
+
+            float[] output = new float[2];
+            int samplesRead = mixer.Read(output.AsSpan());
+
+            Assert.Equal(2, samplesRead);
+
+            // 0.5 * 0.50 + 0.5 * 0.25 = 0.375
+            Assert.InRange(output[0], 0.365f, 0.385f);
+            Assert.InRange(output[1], 0.365f, 0.385f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitSoundLayers_WhenSamplesAreMissing_ContinuesInOrder()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "normal-hitnormal.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+
+            HitSoundLayer[] layers =
+            {
+                new()
+                {
+                    Type = HitSoundType.Custom,
+                    Filename = "missing.wav",
+                    Volume = 50
+                },
+                new()
+                {
+                    Type = HitSoundType.Normal,
+                    SampleSet = SampleSetType.Normal,
+                    SampleIndex = 1,
+                    Volume = 75
+                },
+                new()
+                {
+                    Type = HitSoundType.Normal,
+                    SampleSet = SampleSetType.Normal,
+                    SampleIndex = 0,
+                    Volume = 50
+                }
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlayHitSoundLayers(
+                    layers, directory, resolver, engine);
+
+            Assert.Equal(3, results.Count);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleMissing,
+                results[0].Outcome);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                results[1].Outcome);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                results[2].Outcome);
+
+            Assert.Null(results[0].ResolvedPath);
+            Assert.Equal(normalPath, results[1].ResolvedPath);
+            Assert.Null(results[2].ResolvedPath);
+
+            float[] output = new float[2];
+            int samplesRead = mixer.Read(output.AsSpan());
+
+            Assert.Equal(2, samplesRead);
+
+            // Solo se reproduce la capa encontrada.
+            // 0.5 * 0.75 = 0.375
+            Assert.InRange(output[0], 0.365f, 0.385f);
+            Assert.InRange(output[1], 0.365f, 0.385f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitSoundLayers_WhenLaterLayerIsNull_PropagatesException()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "normal-hitnormal.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+
+            HitSoundLayer[] layers =
+            {
+                new()
+                {
+                    Type = HitSoundType.Normal,
+                    SampleSet = SampleSetType.Normal,
+                    SampleIndex = 1,
+                    Volume = 100
+                },
+                null!
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            ArgumentNullException exception =
+                Assert.Throws<ArgumentNullException>(() =>
+                    service.PlayHitSoundLayers(
+                        layers, directory, resolver, engine));
+
+            Assert.Equal("layer", exception.ParamName);
+
+            // La primera capa ya fue agregada al mixer.
+            float[] output = new float[2];
+            int samplesRead = mixer.Read(output.AsSpan());
+
+            Assert.Equal(2, samplesRead);
+            Assert.InRange(output[0], 0.49f, 0.51f);
+            Assert.InRange(output[1], 0.49f, 0.51f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitSoundLayers_WhenLayersIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayHitSoundLayers(
+                    null!, "beatmap", resolver, engine));
+
+        Assert.Equal("layers", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayHitSoundLayers_WhenResolverIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayHitSoundLayers(
+                    Array.Empty<HitSoundLayer>(),
+                    "beatmap",
+                    null!,
+                    engine));
+
+        Assert.Equal("resolver", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayHitSoundLayers_WhenEngineIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayHitSoundLayers(
+                    Array.Empty<HitSoundLayer>(),
+                    "beatmap",
+                    resolver,
+                    null!));
+
+        Assert.Equal("engine", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PlayHitSoundLayers_WhenDirectoryIsInvalid_ThrowsArgumentException(
+        string? directory)
+    {
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlayHitSoundLayers(
+                    Array.Empty<HitSoundLayer>(),
+                    directory!,
+                    resolver,
+                    engine));
+
+        Assert.Equal("beatmapDirectory", exception.ParamName);
+
+        Assert.Contains(
+            "The beatmap directory must not be empty.",
+            exception.Message);
+    }
+
+    // Hit-circle playback
+    [Fact]
+    public void PlayHitCircle_WhenNormalAndClapExist_PlaysBothLayers()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(directory, "normal-hitnormal.wav");
+            string clapPath = Path.Combine(directory, "normal-hitclap.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+            WriteHalfAmplitudeWav(clapPath);
+
+            var beatmap = new Beatmap();
+            var hitObject = new HitObject
+            {
+                ObjectType = 1,
+                HitSound = 8,
+                HitSample = new HitSample
+                {
+                    NormalSet = 1,
+                    AdditionSet = 1,
+                    Index = 1,
+                    Volume = 50
+                }
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlayHitCircle(
+                    beatmap, hitObject, directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+            Assert.Equal(normalPath, results[0].ResolvedPath);
+            Assert.Equal(clapPath, results[1].ResolvedPath);
+
+            Assert.All(results, result =>
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome));
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Two samples: 0.5 * 0.5 + 0.5 * 0.5 = 0.5
+            Assert.InRange(output[0], 0.49f, 0.51f);
+            Assert.InRange(output[1], 0.49f, 0.51f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitCircle_WhenCustomFilenameExists_PlaysOnlyCustomSample()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string customPath = Path.Combine(directory, "custom.wav");
+            WriteHalfAmplitudeWav(customPath);
+
+            var beatmap = new Beatmap();
+            var hitObject = new HitObject
+            {
+                ObjectType = 1,
+                HitSound = 8,
+                HitSample = new HitSample
+                {
+                    Filename = "custom.wav",
+                    Volume = 40
+                }
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlayHitCircle(
+                    beatmap, hitObject, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleFound,
+                result.Outcome);
+
+            Assert.Equal(customPath, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // One custom sample: 0.5 * 0.4 = 0.2
+            Assert.InRange(output[0], 0.19f, 0.21f);
+            Assert.InRange(output[1], 0.19f, 0.21f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitCircle_WhenClapIsMissing_PlaysNormalAndReturnsFallback()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(directory, "normal-hitnormal.wav");
+            WriteHalfAmplitudeWav(normalPath);
+
+            var beatmap = new Beatmap();
+            var hitObject = new HitObject
+            {
+                ObjectType = 1,
+                HitSound = 8,
+                HitSample = new HitSample
+                {
+                    NormalSet = 1,
+                    AdditionSet = 1,
+                    Index = 1,
+                    Volume = 50
+                }
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlayHitCircle(
+                    beatmap, hitObject, directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                results[0].Outcome);
+
+            Assert.Equal(normalPath, results[0].ResolvedPath);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                results[1].Outcome);
+
+            Assert.Null(results[1].ResolvedPath);
+            Assert.Equal(
+                "normal-hitclap.wav",
+                results[1].FallbackFilename);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Only normal is played: 0.5 * 0.5 = 0.25
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(8)]
+    public void PlayHitCircle_WhenObjectIsNotHitCircle_ThrowsArgumentException(
+        int objectType)
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var hitObject = new HitObject { ObjectType = objectType };
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlayHitCircle(
+                    beatmap, hitObject, "beatmap", resolver, engine));
+
+        Assert.Equal("hitObject", exception.ParamName);
+        Assert.Contains(
+            "The hit object must be a hit circle.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlayHitCircle_WhenBeatmapIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var hitObject = new HitObject { ObjectType = 1 };
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayHitCircle(
+                    null!, hitObject, "beatmap", resolver, engine));
+
+        Assert.Equal("beatmap", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayHitCircle_WhenHitObjectIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayHitCircle(
+                    beatmap, null!, "beatmap", resolver, engine));
+
+        Assert.Equal("hitObject", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PlayHitCircle_WhenDirectoryIsInvalid_ThrowsArgumentException(
+        string? directory)
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+
+        var hitObject = new HitObject
+        {
+            ObjectType = 1,
+            HitSample = new HitSample
+            {
+                NormalSet = 1,
+                Index = 1,
+                Volume = 50
+            }
+        };
+
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlayHitCircle(
+                    beatmap, hitObject, directory!, resolver, engine));
+
+        Assert.Equal("beatmapDirectory", exception.ParamName);
+    }
+
+    // Shared test helpers
+    private static string CreateTempDirectory()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            $"osu-hitsound-layers-{Guid.NewGuid():N}");
+
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
+    private static void WriteHalfAmplitudeWav(string path)
+    {
+        var format = new WaveFormat(44100, 16, 1);
+
+        using var writer = new WaveFileWriter(path, format);
+
+        byte[] audio = new byte[format.BlockAlign * 100];
+
+        for (int i = 0; i < audio.Length; i += 2)
+        {
+            audio[i] = 0;
+            audio[i + 1] = 64;
+        }
+
+        writer.Write(audio, 0, audio.Length);
+    }
+
+    private static AudioPlaybackEngine CreateEngineWithMixer(
+        out MixingSampleProvider mixer)
+    {
+        var engine = new AudioPlaybackEngine();
+
+        mixer = new MixingSampleProvider(
+            WaveFormat.CreateIeeeFloatWaveFormat(44100, 2));
+
+        FieldInfo? mixerField =
+            typeof(AudioPlaybackEngine).GetField(
+                "mixer",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(mixerField);
+        mixerField.SetValue(engine, mixer);
+
+        return engine;
+    }
+
+    // Time-range playback
+
+    [Fact]
+    public void PlayHitCirclesInTimeRange_WhenBeatmapIsEmpty_ReturnsEmptyList()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        List<(HitObject HitObject, List<SampleResolutionResult> Results)> results =
+            service.PlayHitCirclesInTimeRange(
+                beatmap, 1000, 1500, "beatmap", resolver, engine);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void PlayHitCirclesInTimeRange_WhenTwoCirclesMatch_PlaysBothAndPreservesBeatmapOrder()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string latePath = Path.Combine(directory, "late.wav");
+            string earlyPath = Path.Combine(directory, "early.wav");
+            WriteHalfAmplitudeWav(latePath);
+            WriteHalfAmplitudeWav(earlyPath);
+
+            HitObject lateCircle = new()
+            {
+                ObjectType = 1,
+                Time = 1400,
+                HitSample = new HitSample { Filename = "late.wav", Volume = 25 }
+            };
+
+            HitObject earlyCircle = new()
+            {
+                ObjectType = 1,
+                Time = 1200,
+                HitSample = new HitSample { Filename = "early.wav", Volume = 50 }
+            };
+
+            var beatmap = new Beatmap();
+            beatmap.HitObjects.AddRange(new[] { lateCircle, earlyCircle });
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+            using var engine = CreateEngineWithMixer(out MixingSampleProvider mixer);
+
+            var results = service.PlayHitCirclesInTimeRange(
+                beatmap, 1000, 1500, directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+            Assert.Same(lateCircle, results[0].HitObject);
+            Assert.Same(earlyCircle, results[1].HitObject);
+
+            SampleResolutionResult lateResult = Assert.Single(results[0].Results);
+            SampleResolutionResult earlyResult = Assert.Single(results[1].Results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleFound,
+                lateResult.Outcome);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleFound,
+                earlyResult.Outcome);
+
+            Assert.Equal(latePath, lateResult.ResolvedPath);
+            Assert.Equal(earlyPath, earlyResult.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // 0.5 * 0.25 + 0.5 * 0.50 = 0.375
+            Assert.InRange(output[0], 0.365f, 0.385f);
+            Assert.InRange(output[1], 0.365f, 0.385f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitCirclesInTimeRange_ExcludesStartAndNonCircles_IncludesEnd()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            HitObject atStart = new()
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample { Filename = "missing.wav" }
+            };
+
+            HitObject slider = new() { ObjectType = 2, Time = 1200 };
+
+            HitObject inside = new()
+            {
+                ObjectType = 1,
+                Time = 1300,
+                HitSample = new HitSample { Filename = "missing.wav" }
+            };
+
+            HitObject atEnd = new()
+            {
+                ObjectType = 1,
+                Time = 1500,
+                HitSample = new HitSample { Filename = "missing.wav" }
+            };
+
+            HitObject afterEnd = new()
+            {
+                ObjectType = 1,
+                Time = 1501,
+                HitSample = new HitSample { Filename = "missing.wav" }
+            };
+
+            var beatmap = new Beatmap();
+
+            beatmap.HitObjects.AddRange(
+                new[] { atStart, slider, inside, atEnd, afterEnd });
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            var results = service.PlayHitCirclesInTimeRange(
+                beatmap, 1000, 1500, directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+            Assert.Same(inside, results[0].HitObject);
+            Assert.Same(atEnd, results[1].HitObject);
+
+            Assert.All(results, item =>
+                Assert.Equal(
+                    SampleResolutionOutcome.CustomSampleMissing,
+                    Assert.Single(item.Results).Outcome));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitCirclesInTimeRange_WhenSamplesAreMissing_ContinuesAndKeepsOutcomes()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "normal-hitnormal.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+
+            HitObject missingCustom = new()
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample
+                {
+                    Filename = "missing.wav",
+                    Volume = 50
+                }
+            };
+
+            HitObject found = new()
+            {
+                ObjectType = 1,
+                Time = 1200,
+                HitSample = new HitSample
+                {
+                    NormalSet = 1,
+                    Index = 1,
+                    Volume = 50
+                }
+            };
+
+            HitObject externalFallback = new()
+            {
+                ObjectType = 1,
+                Time = 1400,
+                HitSample = new HitSample
+                {
+                    NormalSet = 1,
+                    Index = 0,
+                    Volume = 50
+                }
+            };
+
+            var beatmap = new Beatmap();
+
+            beatmap.HitObjects.AddRange(
+                new[] { missingCustom, found, externalFallback });
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+            using var engine = CreateEngineWithMixer(out MixingSampleProvider mixer);
+
+            var results = service.PlayHitCirclesInTimeRange(
+                beatmap, 999, 1500, directory, resolver, engine);
+
+            Assert.Equal(3, results.Count);
+
+            Assert.Same(missingCustom, results[0].HitObject);
+            Assert.Same(found, results[1].HitObject);
+            Assert.Same(externalFallback, results[2].HitObject);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleMissing,
+                Assert.Single(results[0].Results).Outcome);
+
+            SampleResolutionResult foundResult =
+                Assert.Single(results[1].Results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                foundResult.Outcome);
+
+            Assert.Equal(normalPath, foundResult.ResolvedPath);
+
+            SampleResolutionResult fallbackResult =
+                Assert.Single(results[2].Results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                fallbackResult.Outcome);
+
+            Assert.Null(fallbackResult.ResolvedPath);
+
+            Assert.Equal(
+                "normal-hitnormal.wav",
+                fallbackResult.FallbackFilename);
+
+            float[] output = new float[2];
+
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitCirclesInTimeRange_WhenStartIsNegative_IncludesZeroTime()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            HitObject zeroTimeCircle = new()
+            {
+                ObjectType = 1,
+                Time = 0,
+                HitSample = new HitSample { Filename = "missing.wav" }
+            };
+
+            var beatmap = new Beatmap();
+            beatmap.HitObjects.Add(zeroTimeCircle);
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            var results = service.PlayHitCirclesInTimeRange(
+                beatmap, -1, 0, directory, resolver, engine);
+
+            var item = Assert.Single(results);
+
+            Assert.Same(zeroTimeCircle, item.HitObject);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleMissing,
+                Assert.Single(item.Results).Outcome);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitCirclesInTimeRange_WhenLaterCircleFails_LeavesEarlierInputInMixer()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "first.wav"));
+
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "second.wav"));
+
+            var beatmap = new Beatmap();
+
+            beatmap.HitObjects.AddRange(new[]
+            {
+                new HitObject
+                {
+                    ObjectType = 1,
+                    Time = 1000,
+                    HitSample = new HitSample
+                    {
+                        Filename = "first.wav",
+                        Volume = 50
+                    }
+                },
+                new HitObject
+                {
+                    ObjectType = 1,
+                    Time = 1200,
+                    HitSample = new HitSample
+                    {
+                        Filename = "second.wav",
+                        Volume = 101
+                    }
+                }
+            });
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+            using var engine = CreateEngineWithMixer(out MixingSampleProvider mixer);
+
+            ArgumentOutOfRangeException exception =
+                Assert.Throws<ArgumentOutOfRangeException>(() =>
+                    service.PlayHitCirclesInTimeRange(
+                        beatmap, 999, 1500, directory, resolver, engine));
+
+            Assert.Equal("volume", exception.ParamName);
+            Assert.Equal(101, exception.ActualValue);
+
+            float[] output = new float[2];
+
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitCirclesInTimeRange_WhenBeatmapIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayHitCirclesInTimeRange(
+                    null!, 0, 1000, "beatmap", resolver, engine));
+
+        Assert.Equal("beatmap", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayHitCirclesInTimeRange_WhenResolverIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayHitCirclesInTimeRange(
+                    beatmap, 0, 1000, "beatmap", null!, engine));
+
+        Assert.Equal("resolver", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayHitCirclesInTimeRange_WhenEngineIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayHitCirclesInTimeRange(
+                    beatmap, 0, 1000, "beatmap", resolver, null!));
+
+        Assert.Equal("engine", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PlayHitCirclesInTimeRange_WhenDirectoryIsInvalid_ThrowsArgumentException(
+        string? directory)
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlayHitCirclesInTimeRange(
+                    beatmap, 0, 1000, directory!, resolver, engine));
+
+        Assert.Equal("beatmapDirectory", exception.ParamName);
+
+        Assert.Contains(
+            "The beatmap directory must not be empty.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlayHitCirclesInTimeRange_WhenStartIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidStart)
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlayHitCirclesInTimeRange(
+                    beatmap,
+                    invalidStart,
+                    1000,
+                    "beatmap",
+                    resolver,
+                    engine));
+
+        Assert.Equal(
+            "startExclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The start time must be finite.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlayHitCirclesInTimeRange_WhenEndIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidEnd)
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlayHitCirclesInTimeRange(
+                    beatmap,
+                    0,
+                    invalidEnd,
+                    "beatmap",
+                    resolver,
+                    engine));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The end time must be finite.",
+            exception.Message);
+    }
+    [Fact]
+    public void PlayHitCirclesInTimeRange_WhenEndPrecedesStart_ThrowsArgumentOutOfRangeException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlayHitCirclesInTimeRange(
+                    beatmap, 2000, 1000, "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The end time must be greater than or equal to the start time.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_WhenBeatmapIsEmpty_ReturnsEmptyList()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var cursor = new HitCirclePlaybackCursor();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        var results = service.PlayPendingHitCircles(
+            beatmap, cursor, 1000, "beatmap", resolver, engine);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_ConsecutiveAdvances_DoNotRepeatEvents()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string firstPath = Path.Combine(directory, "first.wav");
+            string secondPath = Path.Combine(directory, "second.wav");
+
+            WriteHalfAmplitudeWav(firstPath);
+            WriteHalfAmplitudeWav(secondPath);
+
+            HitObject first = new()
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample
+                {
+                    Filename = "first.wav",
+                    Volume = 50
+                }
+            };
+
+            HitObject second = new()
+            {
+                ObjectType = 1,
+                Time = 1500,
+                HitSample = new HitSample
+                {
+                    Filename = "second.wav",
+                    Volume = 25
+                }
+            };
+
+            var beatmap = new Beatmap();
+            beatmap.HitObjects.AddRange(new[] { first, second });
+
+            var service = new HitSoundPlaybackService();
+            var cursor = new HitCirclePlaybackCursor();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            var firstResults = service.PlayPendingHitCircles(
+                beatmap, cursor, 1000, directory, resolver, engine);
+
+            var secondResults = service.PlayPendingHitCircles(
+                beatmap, cursor, 1500, directory, resolver, engine);
+
+            var repeatedResults = service.PlayPendingHitCircles(
+                beatmap, cursor, 1500, directory, resolver, engine);
+
+            Assert.Same(first, Assert.Single(firstResults).HitObject);
+            Assert.Same(second, Assert.Single(secondResults).HitObject);
+            Assert.Empty(repeatedResults);
+
+            Assert.Equal(
+                firstPath,
+                Assert.Single(firstResults[0].Results).ResolvedPath);
+
+            Assert.Equal(
+                secondPath,
+                Assert.Single(secondResults[0].Results).ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // 0.5 * 0.50 + 0.5 * 0.25 = 0.375
+            Assert.InRange(output[0], 0.365f, 0.385f);
+            Assert.InRange(output[1], 0.365f, 0.385f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_WhenCirclesShareTime_ProcessesBoth()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            HitObject first = new()
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample { Filename = "missing-a.wav" }
+            };
+
+            HitObject second = new()
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample { Filename = "missing-b.wav" }
+            };
+
+            var beatmap = new Beatmap();
+            beatmap.HitObjects.AddRange(new[] { first, second });
+
+            var service = new HitSoundPlaybackService();
+            var cursor = new HitCirclePlaybackCursor();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            var results = service.PlayPendingHitCircles(
+                beatmap, cursor, 1000, directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+            Assert.Same(first, results[0].HitObject);
+            Assert.Same(second, results[1].HitObject);
+
+            Assert.All(results, item =>
+                Assert.Equal(
+                    SampleResolutionOutcome.CustomSampleMissing,
+                    Assert.Single(item.Results).Outcome));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_WhenSampleIsMissing_ContinuesToNextCircle()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "normal-hitnormal.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+
+            var beatmap = new Beatmap();
+
+            beatmap.HitObjects.AddRange(new[]
+            {
+                new HitObject
+                {
+                    ObjectType = 1,
+                    Time = 500,
+                    HitSample = new HitSample
+                    {
+                        Filename = "missing.wav"
+                    }
+                },
+                new HitObject
+                {
+                    ObjectType = 1,
+                    Time = 1000,
+                    HitSample = new HitSample
+                    {
+                        NormalSet = 1,
+                        Index = 1,
+                        Volume = 50
+                    }
+                }
+            });
+
+            var service = new HitSoundPlaybackService();
+            var cursor = new HitCirclePlaybackCursor();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            var results = service.PlayPendingHitCircles(
+                beatmap, cursor, 1000, directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleMissing,
+                Assert.Single(results[0].Results).Outcome);
+
+            SampleResolutionResult found =
+                Assert.Single(results[1].Results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                found.Outcome);
+
+            Assert.Equal(normalPath, found.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_AfterSeekToZero_ReprocessesZeroTimeCircle()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            HitObject circle = new()
+            {
+                ObjectType = 1,
+                Time = 0,
+                HitSample = new HitSample
+                {
+                    Filename = "missing.wav"
+                }
+            };
+
+            var beatmap = new Beatmap();
+            beatmap.HitObjects.Add(circle);
+
+            var service = new HitSoundPlaybackService();
+            var cursor = new HitCirclePlaybackCursor();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            var firstResults = service.PlayPendingHitCircles(
+                beatmap, cursor, 0, directory, resolver, engine);
+
+            Assert.Same(circle, Assert.Single(firstResults).HitObject);
+
+            cursor.SeekTo(0);
+
+            var secondResults = service.PlayPendingHitCircles(
+                beatmap, cursor, 0, directory, resolver, engine);
+
+            Assert.Same(circle, Assert.Single(secondResults).HitObject);
+
+            Assert.Empty(service.PlayPendingHitCircles(
+                beatmap, cursor, 0, directory, resolver, engine));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_AfterSeekForward_SkipsEarlierCircles()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            HitObject skipped = new()
+            {
+                ObjectType = 1,
+                Time = 500,
+                HitSample = new HitSample { Filename = "missing-a.wav" }
+            };
+
+            HitObject atSeekPosition = new()
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample { Filename = "missing-b.wav" }
+            };
+
+            HitObject pending = new()
+            {
+                ObjectType = 1,
+                Time = 1200,
+                HitSample = new HitSample { Filename = "missing-c.wav" }
+            };
+
+            var beatmap = new Beatmap();
+
+            beatmap.HitObjects.AddRange(
+                new[] { skipped, atSeekPosition, pending });
+
+            var service = new HitSoundPlaybackService();
+            var cursor = new HitCirclePlaybackCursor();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            cursor.SeekTo(1000);
+
+            var results = service.PlayPendingHitCircles(
+                beatmap, cursor, 1200, directory, resolver, engine);
+
+            Assert.Same(pending, Assert.Single(results).HitObject);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_SkipsNonCircleObjects()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            HitObject slider = new() { ObjectType = 2, Time = 500 };
+            HitObject spinner = new() { ObjectType = 8, Time = 750 };
+
+            HitObject circle = new()
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample
+                {
+                    Filename = "missing.wav"
+                }
+            };
+
+            var beatmap = new Beatmap();
+
+            beatmap.HitObjects.AddRange(
+                new[] { slider, spinner, circle });
+
+            var service = new HitSoundPlaybackService();
+            var cursor = new HitCirclePlaybackCursor();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            var results = service.PlayPendingHitCircles(
+                beatmap, cursor, 1000, directory, resolver, engine);
+
+            Assert.Same(circle, Assert.Single(results).HitObject);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_WhenLaterCircleFails_CursorRemainsAdvanced()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "first.wav"));
+
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "second.wav"));
+
+            var beatmap = new Beatmap();
+
+            beatmap.HitObjects.AddRange(new[]
+            {
+                new HitObject
+                {
+                    ObjectType = 1,
+                    Time = 500,
+                    HitSample = new HitSample
+                    {
+                        Filename = "first.wav",
+                        Volume = 50
+                    }
+                },
+                new HitObject
+                {
+                    ObjectType = 1,
+                    Time = 1000,
+                    HitSample = new HitSample
+                    {
+                        Filename = "second.wav",
+                        Volume = 101
+                    }
+                }
+            });
+
+            var service = new HitSoundPlaybackService();
+            var cursor = new HitCirclePlaybackCursor();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            ArgumentOutOfRangeException exception =
+                Assert.Throws<ArgumentOutOfRangeException>(() =>
+                    service.PlayPendingHitCircles(
+                        beatmap, cursor, 1000, directory, resolver, engine));
+
+            Assert.Equal("volume", exception.ParamName);
+            Assert.Equal(101, exception.ActualValue);
+
+            // The cursor has already advanced even though playback failed.
+            Assert.Empty(service.PlayPendingHitCircles(
+                beatmap, cursor, 1000, directory, resolver, engine));
+
+            // The successfully added first sample remains in the mixer.
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_WhenBeatmapIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var cursor = new HitCirclePlaybackCursor();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayPendingHitCircles(
+                    null!, cursor, 1000, "beatmap", resolver, engine));
+
+        Assert.Equal("beatmap", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_WhenCursorIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayPendingHitCircles(
+                    beatmap, null!, 1000, "beatmap", resolver, engine));
+
+        Assert.Equal("cursor", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_WhenResolverIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var cursor = new HitCirclePlaybackCursor();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayPendingHitCircles(
+                    beatmap, cursor, 1000, "beatmap", null!, engine));
+
+        Assert.Equal("resolver", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_WhenEngineIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var cursor = new HitCirclePlaybackCursor();
+        var resolver = new SampleResolver();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayPendingHitCircles(
+                    beatmap, cursor, 1000, "beatmap", resolver, null!));
+
+        Assert.Equal("engine", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PlayPendingHitCircles_WhenDirectoryIsInvalid_ThrowsArgumentException(
+        string? directory)
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var cursor = new HitCirclePlaybackCursor();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlayPendingHitCircles(
+                    beatmap, cursor, 1000, directory!, resolver, engine));
+
+        Assert.Equal("beatmapDirectory", exception.ParamName);
+
+        Assert.Contains(
+            "The beatmap directory must not be empty.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlayPendingHitCircles_WhenPositionIsInvalid_ThrowsArgumentOutOfRangeException(
+        double invalidPosition)
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var cursor = new HitCirclePlaybackCursor();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlayPendingHitCircles(
+                    beatmap,
+                    cursor,
+                    invalidPosition,
+                    "beatmap",
+                    resolver,
+                    engine));
+
+        Assert.Equal(
+            "currentPositionMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The timeline position must be finite and non-negative.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlayPendingHitCircles_WhenPositionMovesBackward_ThrowsInvalidOperationException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var cursor = new HitCirclePlaybackCursor();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        service.PlayPendingHitCircles(
+            beatmap, cursor, 1500, "beatmap", resolver, engine);
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                service.PlayPendingHitCircles(
+                    beatmap, cursor, 1000, "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "The timeline position moved backwards. Reset the playback cursor after seeking.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlaySliderEdge_Head_PlaysNormalAtTimingPointVolume()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(directory, "normal-hitnormal.wav");
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderEdge(
+                    beatmap, slider, 0, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+            Assert.Equal(path, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // 0.5 amplitude * 50% volume = 0.25
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdge_Repeat_UsesTimingPointAtEdgeAndMixesLayers()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "soft-hitnormal2.wav");
+
+            string clapPath = Path.Combine(
+                directory, "soft-hitclap2.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+            WriteHalfAmplitudeWav(clapPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderEdge(
+                    beatmap, slider, 1, directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+            Assert.Equal(normalPath, results[0].ResolvedPath);
+            Assert.Equal(clapPath, results[1].ResolvedPath);
+
+            Assert.All(results, result =>
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome));
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Two sources: 0.5 * 0.25 + 0.5 * 0.25 = 0.25
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdge_Tail_UsesExplicitEdgeSampleSet()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(
+                directory, "normal-hitnormal2.wav");
+
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderEdge(
+                    beatmap, slider, 2, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(path, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // SampleSet comes from the edge; volume comes from timing.
+            Assert.InRange(output[0], 0.115f, 0.135f);
+            Assert.InRange(output[1], 0.115f, 0.135f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdge_WhenClapIsMissing_PlaysNormalAndReturnsFallback()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "soft-hitnormal2.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderEdge(
+                    beatmap, slider, 1, directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                results[0].Outcome);
+            Assert.Equal(normalPath, results[0].ResolvedPath);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                results[1].Outcome);
+            Assert.Null(results[1].ResolvedPath);
+            Assert.Equal(
+                "soft-hitclap.wav",
+                results[1].FallbackFilename);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Only normal: 0.5 * 0.25 = 0.125
+            Assert.InRange(output[0], 0.115f, 0.135f);
+            Assert.InRange(output[1], 0.115f, 0.135f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdge_WhenSampleIndexIsZero_DoesNotUseBeatmapFile()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-hitnormal.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            beatmap.TimingPoints[0].SampleIndex = 0;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderEdge(
+                    beatmap, slider, 0, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                result.Outcome);
+
+            Assert.Null(result.ResolvedPath);
+            Assert.Equal(
+                "normal-hitnormal.wav",
+                result.FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdge_IgnoresTrailingCustomFilenameAndVolume()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "normal-hitnormal.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "custom.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            slider.HitSample = new HitSample
+            {
+                Filename = "custom.wav",
+                Index = 9,
+                Volume = 100
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderEdge(
+                    beatmap, slider, 0, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+            Assert.Equal(normalPath, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Timing-point volume is 50%, not trailing volume 100%.
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdge_WhenBankedSampleIsMissing_UsesUniversalSample()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string universalPath = Path.Combine(
+                directory, "hitnormal.wav");
+
+            WriteHalfAmplitudeWav(universalPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            beatmap.TimingPoints[0].SampleIndex = 2;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderEdge(
+                    beatmap, slider, 0, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+            Assert.Equal(universalPath, result.ResolvedPath);
+            Assert.Equal(
+                "normal-hitnormal.wav",
+                result.FallbackFilename);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdge_WhenEdgeCountIsInvalid_ThrowsInvalidOperationException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        slider.SliderEdges.RemoveAt(2);
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                service.PlaySliderEdge(
+                    beatmap, slider, 1, "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "It is not possible to resolve slider edge hitsounds because the slider has 2 edges but requires 3.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    public void PlaySliderEdge_WhenObjectIsNotSlider_ThrowsArgumentException(
+        int objectType)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        slider.ObjectType = objectType;
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlaySliderEdge(
+                    beatmap, slider, 0, "beatmap", resolver, engine));
+
+        Assert.Equal("slider", exception.ParamName);
+        Assert.Contains(
+            "The hit object must be a slider.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlaySliderEdge_WhenBeatmapIsNull_ThrowsArgumentNullException()
+    {
+        var (_, slider) = CreateTwoSpanSlider();
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderEdge(
+                    null!, slider, 0, "beatmap", resolver, engine));
+
+        Assert.Equal("beatmap", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderEdge_WhenSliderIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderEdge(
+                    beatmap, null!, 0, "beatmap", resolver, engine));
+
+        Assert.Equal("slider", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(3)]
+    public void PlaySliderEdge_WhenEdgeIndexIsInvalid_ThrowsArgumentOutOfRangeException(
+        int edgeIndex)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderEdge(
+                    beatmap, slider, edgeIndex, "beatmap", resolver, engine));
+
+        Assert.Equal("edgeIndex", exception.ParamName);
+        Assert.Equal(edgeIndex, exception.ActualValue);
+        Assert.Contains(
+            "The slider edge index must be between 0 and 2.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PlaySliderEdge_WhenDirectoryIsInvalid_ThrowsArgumentException(
+        string? directory)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlaySliderEdge(
+                    beatmap, slider, 0, directory!, resolver, engine));
+
+        Assert.Equal("beatmapDirectory", exception.ParamName);
+        Assert.Contains(
+            "The beatmap directory must not be empty.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlaySliderEdge_WhenResolverIsNull_ThrowsArgumentNullException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        var service = new HitSoundPlaybackService();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderEdge(
+                    beatmap, slider, 0, "beatmap", null!, engine));
+
+        Assert.Equal("resolver", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderEdge_WhenEngineIsNull_ThrowsArgumentNullException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderEdge(
+                    beatmap, slider, 0, "beatmap", resolver, null!));
+
+        Assert.Equal("engine", exception.ParamName);
+    }
+
+    // Shared slider test fixture
+    private static (Beatmap Beatmap, HitObject Slider) CreateTwoSpanSlider()
+    {
+        var beatmap = new Beatmap
+        {
+            SliderMultiplier = 1.4
+        };
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 0,
+            BeatLength = 500,
+            IsUninherited = true,
+            SampleSet = 1,
+            SampleIndex = 1,
+            Volume = 50
+        });
+
+        beatmap.TimingPoints.Add(new TimingPoint
+        {
+            Time = 1500,
+            BeatLength = -100,
+            IsUninherited = false,
+            SampleSet = 2,
+            SampleIndex = 2,
+            Volume = 25
+        });
+
+        var slider = new HitObject
+        {
+            ObjectType = 2,
+            Time = 1000,
+            Length = 140,
+            Slides = 2
+        };
+
+        slider.SliderEdges.Add(new SliderEdge
+        {
+            HitSound = 0,
+            NormalSet = 0,
+            AdditionSet = 0
+        });
+
+        slider.SliderEdges.Add(new SliderEdge
+        {
+            HitSound = 8,
+            NormalSet = 0,
+            AdditionSet = 0
+        });
+
+        slider.SliderEdges.Add(new SliderEdge
+        {
+            HitSound = 0,
+            NormalSet = 1,
+            AdditionSet = 0
+        });
+
+        return (beatmap, slider);
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenSampleExists_PlaysAtStartTimingPointVolume()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(
+                directory, "normal-slidertick.wav");
+
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderTick(
+                    beatmap, slider, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(path, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Amplitude 0.5 * volume 50% = 0.25
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenSliderHasWhistle_DoesNotPlayBodySounds()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string tickPath = Path.Combine(
+                directory, "normal-slidertick.wav");
+
+            WriteHalfAmplitudeWav(tickPath);
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-sliderslide.wav"));
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-sliderwhistle.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            slider.HitSound = 2;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderTick(
+                    beatmap, slider, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(tickPath, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Only the tick is played.
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTick_IgnoresTrailingIndexVolumeAndCustomFilename()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string tickPath = Path.Combine(
+                directory, "normal-slidertick.wav");
+
+            WriteHalfAmplitudeWav(tickPath);
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "custom.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            slider.HitSample = new HitSample
+            {
+                Index = 9,
+                Volume = 100,
+                Filename = "custom.wav"
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderTick(
+                    beatmap, slider, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(tickPath, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Timing-point volume 50%, not HitSample.Volume 100%.
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenNormalSetIsExplicit_UsesSpecifiedSampleSet()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(
+                directory, "drum-slidertick.wav");
+
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            slider.HitSample.NormalSet = 3;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderTick(
+                    beatmap, slider, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(path, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenSliderStartsAfterTimingChange_UsesNewTimingPoint()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(
+                directory, "soft-slidertick2.wav");
+
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            // The fixture has a timing change at 1500 ms.
+            slider.Time = 1800;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderTick(
+                    beatmap, slider, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(path, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // New timing point: volume 25%.
+            // Amplitude 0.5 * 0.25 = 0.125
+            Assert.InRange(output[0], 0.115f, 0.135f);
+            Assert.InRange(output[1], 0.115f, 0.135f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenSampleIsMissing_ReturnsExternalFallback()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderTick(
+                    beatmap, slider, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                result.Outcome);
+
+            Assert.Null(result.ResolvedPath);
+
+            Assert.Equal(
+                "normal-slidertick.wav",
+                result.FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenSampleIndexIsZero_IgnoresExistingBeatmapSample()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-slidertick.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            beatmap.TimingPoints[0].SampleIndex = 0;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderTick(
+                    beatmap, slider, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                result.Outcome);
+
+            Assert.Null(result.ResolvedPath);
+            Assert.Equal(
+                "normal-slidertick.wav",
+                result.FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenBankedSampleIsMissing_UsesUniversalSample()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string universalPath = Path.Combine(
+                directory, "slidertick.wav");
+
+            WriteHalfAmplitudeWav(universalPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            beatmap.TimingPoints[0].SampleIndex = 2;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderTick(
+                    beatmap, slider, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(universalPath, result.ResolvedPath);
+
+            Assert.Equal(
+                "normal-slidertick.wav",
+                result.FallbackFilename);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    public void PlaySliderTick_WhenObjectIsNotSlider_ThrowsArgumentException(
+        int objectType)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        slider.ObjectType = objectType;
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlaySliderTick(
+                    beatmap, slider, "beatmap", resolver, engine));
+
+        Assert.Equal("slider", exception.ParamName);
+        Assert.Contains(
+            "The hit object must be a slider.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenBeatmapIsNull_ThrowsArgumentNullException()
+    {
+        var (_, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderTick(
+                    null!, slider, "beatmap", resolver, engine));
+
+        Assert.Equal("beatmap", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenSliderIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderTick(
+                    beatmap, null!, "beatmap", resolver, engine));
+
+        Assert.Equal("slider", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PlaySliderTick_WhenDirectoryIsInvalid_ThrowsArgumentException(
+        string? directory)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlaySliderTick(
+                    beatmap, slider, directory!, resolver, engine));
+
+        Assert.Equal("beatmapDirectory", exception.ParamName);
+        Assert.Contains(
+            "The beatmap directory must not be empty.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenResolverIsNull_ThrowsArgumentNullException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderTick(
+                    beatmap, slider, "beatmap", null!, engine));
+
+        Assert.Equal("resolver", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenEngineIsNull_ThrowsArgumentNullException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderTick(
+                    beatmap, slider, "beatmap", resolver, null!));
+
+        Assert.Equal("engine", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenSampleExistsButOutputIsNotInitialized_ThrowsInvalidOperationException()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-slidertick.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            InvalidOperationException exception =
+                Assert.Throws<InvalidOperationException>(() =>
+                    service.PlaySliderTick(
+                        beatmap, slider, directory, resolver, engine));
+
+            Assert.Equal(
+                "The audio output has not been initialized.",
+                exception.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenRangeContainsTicks_PlaysEachAndReturnsTimes()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(
+                directory, "normal-slidertick.wav");
+
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.BeatmapVersion = 14;
+            beatmap.SliderTickRate = 4;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            var results = service.PlaySliderTicksInTimeRange(
+                beatmap, slider, 1200, 1400,
+                directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+            Assert.Equal(1250, results[0].TickTime);
+            Assert.Equal(1375, results[1].TickTime);
+
+            foreach (var item in results)
+            {
+                SampleResolutionResult result =
+                    Assert.Single(item.Results);
+
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome);
+
+                Assert.Equal(path, result.ResolvedPath);
+            }
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Two ticks: 2 * (0.5 * 0.5) = 0.5
+            Assert.InRange(output[0], 0.49f, 0.51f);
+            Assert.InRange(output[1], 0.49f, 0.51f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenTickIsOnReverseSpan_UsesSliderStartSample()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(
+                directory, "normal-slidertick.wav");
+
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.BeatmapVersion = 14;
+            beatmap.SliderTickRate = 4;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            var results = service.PlaySliderTicksInTimeRange(
+                beatmap, slider, 1600, 1700,
+                directory, resolver, engine);
+
+            var item = Assert.Single(results);
+            Assert.Equal(1625, item.TickTime);
+
+            SampleResolutionResult result =
+                Assert.Single(item.Results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(path, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Slider start volume: 50%.
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_AdjacentIntervals_DoNotRepeatBoundaryTick()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-slidertick.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.BeatmapVersion = 14;
+            beatmap.SliderTickRate = 4;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            var first = service.PlaySliderTicksInTimeRange(
+                beatmap, slider, 1000, 1250,
+                directory, resolver, engine);
+
+            var second = service.PlaySliderTicksInTimeRange(
+                beatmap, slider, 1250, 1375,
+                directory, resolver, engine);
+
+            Assert.Equal(
+                new double[] { 1125, 1250 },
+                first.Select(item => item.TickTime));
+
+            Assert.Equal(
+                new double[] { 1375 },
+                second.Select(item => item.TickTime));
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Three occurrences: 3 * 0.25 = 0.75
+            Assert.InRange(output[0], 0.74f, 0.76f);
+            Assert.InRange(output[1], 0.74f, 0.76f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenNoTicksMatch_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        beatmap.BeatmapVersion = 14;
+        beatmap.SliderTickRate = 4;
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        var results = service.PlaySliderTicksInTimeRange(
+            beatmap, slider, 0, 1000,
+            "beatmap", resolver, engine);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenSampleIsMissing_ReturnsFallbackForEveryTick()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.BeatmapVersion = 14;
+            beatmap.SliderTickRate = 4;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            var results = service.PlaySliderTicksInTimeRange(
+                beatmap, slider, 1200, 1400,
+                directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+            Assert.Equal(1250, results[0].TickTime);
+            Assert.Equal(1375, results[1].TickTime);
+
+            foreach (var item in results)
+            {
+                SampleResolutionResult result =
+                    Assert.Single(item.Results);
+
+                Assert.Equal(
+                    SampleResolutionOutcome.ExternalFallbackRequired,
+                    result.Outcome);
+
+                Assert.Null(result.ResolvedPath);
+
+                Assert.Equal(
+                    "normal-slidertick.wav",
+                    result.FallbackFilename);
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenIndexedSampleExists_ReusesSampleForEachTick()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(
+                directory, "normal-slidertick2.wav");
+
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.BeatmapVersion = 14;
+            beatmap.SliderTickRate = 4;
+            beatmap.TimingPoints[0].SampleIndex = 2;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            var results = service.PlaySliderTicksInTimeRange(
+                beatmap, slider, 1200, 1400,
+                directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+
+            foreach (var item in results)
+            {
+                SampleResolutionResult result =
+                    Assert.Single(item.Results);
+
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome);
+
+                Assert.Equal(path, result.ResolvedPath);
+            }
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.49f, 0.51f);
+            Assert.InRange(output[1], 0.49f, 0.51f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenOutputIsNotInitialized_PropagatesException()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-slidertick.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.BeatmapVersion = 14;
+            beatmap.SliderTickRate = 4;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            InvalidOperationException exception =
+                Assert.Throws<InvalidOperationException>(() =>
+                    service.PlaySliderTicksInTimeRange(
+                        beatmap, slider, 1200, 1400,
+                        directory, resolver, engine));
+
+            Assert.Equal(
+                "The audio output has not been initialized.",
+                exception.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    public void PlaySliderTicksInTimeRange_WhenObjectIsNotSlider_ThrowsArgumentException(
+        int objectType)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        slider.ObjectType = objectType;
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlaySliderTicksInTimeRange(
+                    beatmap, slider, 1000, 1400,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("slider", exception.ParamName);
+
+        Assert.Contains(
+            "The hit object must be a slider.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenBeatmapIsNull_ThrowsArgumentNullException()
+    {
+        var (_, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderTicksInTimeRange(
+                    null!, slider, 0, 2000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("beatmap", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenSliderIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderTicksInTimeRange(
+                    beatmap, null!, 0, 2000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("slider", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenResolverIsNull_ThrowsArgumentNullException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderTicksInTimeRange(
+                    beatmap, slider, 0, 2000,
+                    "beatmap", null!, engine));
+
+        Assert.Equal("resolver", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenEngineIsNull_ThrowsArgumentNullException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderTicksInTimeRange(
+                    beatmap, slider, 0, 2000,
+                    "beatmap", resolver, null!));
+
+        Assert.Equal("engine", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PlaySliderTicksInTimeRange_WhenDirectoryIsInvalid_ThrowsArgumentException(
+        string? directory)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlaySliderTicksInTimeRange(
+                    beatmap, slider, 0, 2000,
+                    directory!, resolver, engine));
+
+        Assert.Equal(
+            "beatmapDirectory",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The beatmap directory must not be empty.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlaySliderTicksInTimeRange_WhenStartIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidStart)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderTicksInTimeRange(
+                    beatmap, slider, invalidStart, 2000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "startExclusiveMilliseconds",
+            exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlaySliderTicksInTimeRange_WhenEndIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidEnd)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderTicksInTimeRange(
+                    beatmap, slider, 1000, invalidEnd,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenEndPrecedesStart_ThrowsArgumentOutOfRangeException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderTicksInTimeRange(
+                    beatmap, slider, 2000, 1000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenRangeHasEqualBounds_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        beatmap.BeatmapVersion = 14;
+        beatmap.SliderTickRate = 4;
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        var results = service.PlaySliderTicksInTimeRange(
+            beatmap, slider, 1250, 1250,
+            "beatmap", resolver, engine);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void PlaySliderTicksInTimeRange_WhenSliderHasNoSpans_PropagatesException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        slider.Slides = 0;
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                service.PlaySliderTicksInTimeRange(
+                    beatmap, slider, 0, 2000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "It is not possible to calculate slider tick times because the slider must have at least one span.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenAllEdgesMatch_PlaysEveryEdgeInOrder()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string headPath = Path.Combine(
+                directory, "normal-hitnormal.wav");
+            string repeatNormalPath = Path.Combine(
+                directory, "soft-hitnormal2.wav");
+            string repeatClapPath = Path.Combine(
+                directory, "soft-hitclap2.wav");
+            string tailPath = Path.Combine(
+                directory, "normal-hitnormal2.wav");
+
+            WriteHalfAmplitudeWav(headPath);
+            WriteHalfAmplitudeWav(repeatNormalPath);
+            WriteHalfAmplitudeWav(repeatClapPath);
+            WriteHalfAmplitudeWav(tailPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            var results = service.PlaySliderEdgesInTimeRange(
+                beatmap, slider, 999, 2000,
+                directory, resolver, engine);
+
+            Assert.Equal(3, results.Count);
+
+            Assert.Equal(0, results[0].EdgeIndex);
+            Assert.Equal(1000.0, results[0].EdgeTime);
+
+            Assert.Equal(1, results[1].EdgeIndex);
+            Assert.Equal(1500.0, results[1].EdgeTime);
+
+            Assert.Equal(2, results[2].EdgeIndex);
+            Assert.Equal(2000.0, results[2].EdgeTime);
+
+            Assert.Equal(
+                headPath,
+                Assert.Single(results[0].Results).ResolvedPath);
+
+            Assert.Equal(2, results[1].Results.Count);
+            Assert.Equal(
+                repeatNormalPath,
+                results[1].Results[0].ResolvedPath);
+            Assert.Equal(
+                repeatClapPath,
+                results[1].Results[1].ResolvedPath);
+
+            Assert.Equal(
+                tailPath,
+                Assert.Single(results[2].Results).ResolvedPath);
+
+            Assert.All(
+                results.SelectMany(item => item.Results),
+                result => Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome));
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Head: 0.25
+            // Repeat normal + clap: 0.125 + 0.125
+            // Tail: 0.125
+            // Total: 0.625
+            Assert.InRange(output[0], 0.615f, 0.635f);
+            Assert.InRange(output[1], 0.615f, 0.635f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenRangeContainsRepeatAndTail_SkipsHead()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "soft-hitnormal2.wav");
+            string clapPath = Path.Combine(
+                directory, "soft-hitclap2.wav");
+            string tailPath = Path.Combine(
+                directory, "normal-hitnormal2.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+            WriteHalfAmplitudeWav(clapPath);
+            WriteHalfAmplitudeWav(tailPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            var results = service.PlaySliderEdgesInTimeRange(
+                beatmap, slider, 1200, 2000,
+                directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.Equal(1, results[0].EdgeIndex);
+            Assert.Equal(1500.0, results[0].EdgeTime);
+
+            Assert.Equal(2, results[1].EdgeIndex);
+            Assert.Equal(2000.0, results[1].EdgeTime);
+
+            Assert.Equal(2, results[0].Results.Count);
+            Assert.Single(results[1].Results);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Repeat: 0.25; tail: 0.125
+            Assert.InRange(output[0], 0.365f, 0.385f);
+            Assert.InRange(output[1], 0.365f, 0.385f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_AdjacentIntervals_DoNotRepeatEdges()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        var first = service.PlaySliderEdgesInTimeRange(
+            beatmap, slider, 999, 1000,
+            "beatmap", resolver, engine);
+
+        var second = service.PlaySliderEdgesInTimeRange(
+            beatmap, slider, 1000, 1500,
+            "beatmap", resolver, engine);
+
+        var third = service.PlaySliderEdgesInTimeRange(
+            beatmap, slider, 1500, 2000,
+            "beatmap", resolver, engine);
+
+        Assert.Equal(0, Assert.Single(first).EdgeIndex);
+        Assert.Equal(1, Assert.Single(second).EdgeIndex);
+        Assert.Equal(2, Assert.Single(third).EdgeIndex);
+
+        Assert.Equal(1000.0, first[0].EdgeTime);
+        Assert.Equal(1500.0, second[0].EdgeTime);
+        Assert.Equal(2000.0, third[0].EdgeTime);
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenNoEdgesMatch_ReturnsEmpty()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        var results = service.PlaySliderEdgesInTimeRange(
+            beatmap, slider, 0, 999,
+            "beatmap", resolver, engine);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenClapIsMissing_ContinuesWithOtherLayers()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "soft-hitnormal2.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            var results = service.PlaySliderEdgesInTimeRange(
+                beatmap, slider, 1000, 1500,
+                directory, resolver, engine);
+
+            var repeat = Assert.Single(results);
+
+            Assert.Equal(1, repeat.EdgeIndex);
+            Assert.Equal(1500.0, repeat.EdgeTime);
+            Assert.Equal(2, repeat.Results.Count);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                repeat.Results[0].Outcome);
+            Assert.Equal(
+                normalPath,
+                repeat.Results[0].ResolvedPath);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                repeat.Results[1].Outcome);
+            Assert.Null(repeat.Results[1].ResolvedPath);
+            Assert.Equal(
+                "soft-hitclap.wav",
+                repeat.Results[1].FallbackFilename);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.115f, 0.135f);
+            Assert.InRange(output[1], 0.115f, 0.135f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenAllSamplesAreMissing_ReturnsFallbackForEachLayer()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            var results = service.PlaySliderEdgesInTimeRange(
+                beatmap, slider, 999, 2000,
+                directory, resolver, engine);
+
+            Assert.Equal(3, results.Count);
+            Assert.Single(results[0].Results);
+            Assert.Equal(2, results[1].Results.Count);
+            Assert.Single(results[2].Results);
+
+            Assert.All(
+                results.SelectMany(item => item.Results),
+                result =>
+                {
+                    Assert.Equal(
+                        SampleResolutionOutcome.ExternalFallbackRequired,
+                        result.Outcome);
+
+                    Assert.Null(result.ResolvedPath);
+                });
+
+            Assert.Equal(
+                "normal-hitnormal.wav",
+                results[0].Results[0].FallbackFilename);
+
+            Assert.Equal(
+                "soft-hitnormal.wav",
+                results[1].Results[0].FallbackFilename);
+
+            Assert.Equal(
+                "soft-hitclap.wav",
+                results[1].Results[1].FallbackFilename);
+
+            Assert.Equal(
+                "normal-hitnormal.wav",
+                results[2].Results[0].FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenOutputIsNotInitialized_PropagatesException()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-hitnormal.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            InvalidOperationException exception =
+                Assert.Throws<InvalidOperationException>(() =>
+                    service.PlaySliderEdgesInTimeRange(
+                        beatmap, slider, 999, 1000,
+                        directory, resolver, engine));
+
+            Assert.Equal(
+                "The audio output has not been initialized.",
+                exception.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenLaterEdgeFails_EarlierAudioRemains()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-hitnormal.wav"));
+
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "soft-hitnormal2.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            beatmap.TimingPoints[1].Volume = 101;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            ArgumentOutOfRangeException exception =
+                Assert.Throws<ArgumentOutOfRangeException>(() =>
+                    service.PlaySliderEdgesInTimeRange(
+                        beatmap, slider, 999, 2000,
+                        directory, resolver, engine));
+
+            Assert.Equal("volume", exception.ParamName);
+            Assert.Equal(101, exception.ActualValue);
+
+            // The head was added before the repeat failed.
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenEdgeCountIsInvalid_PropagatesException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        slider.SliderEdges.RemoveAt(2);
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                service.PlaySliderEdgesInTimeRange(
+                    beatmap, slider, 999, 1000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "It is not possible to resolve slider edge hitsounds because the slider has 2 edges but requires 3.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    public void PlaySliderEdgesInTimeRange_WhenObjectIsNotSlider_ThrowsArgumentException(
+        int objectType)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        slider.ObjectType = objectType;
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlaySliderEdgesInTimeRange(
+                    beatmap, slider, 0, 2000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("slider", exception.ParamName);
+
+        Assert.Contains(
+            "The hit object must be a slider.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenBeatmapIsNull_ThrowsArgumentNullException()
+    {
+        var (_, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderEdgesInTimeRange(
+                    null!, slider, 0, 2000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("beatmap", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenSliderIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderEdgesInTimeRange(
+                    beatmap, null!, 0, 2000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("slider", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenResolverIsNull_ThrowsArgumentNullException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderEdgesInTimeRange(
+                    beatmap, slider, 0, 2000,
+                    "beatmap", null!, engine));
+
+        Assert.Equal("resolver", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenEngineIsNull_ThrowsArgumentNullException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlaySliderEdgesInTimeRange(
+                    beatmap, slider, 0, 2000,
+                    "beatmap", resolver, null!));
+
+        Assert.Equal("engine", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PlaySliderEdgesInTimeRange_WhenDirectoryIsInvalid_ThrowsArgumentException(
+        string? directory)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlaySliderEdgesInTimeRange(
+                    beatmap, slider, 0, 2000,
+                    directory!, resolver, engine));
+
+        Assert.Equal("beatmapDirectory", exception.ParamName);
+
+        Assert.Contains(
+            "The beatmap directory must not be empty.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlaySliderEdgesInTimeRange_WhenStartIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidStart)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderEdgesInTimeRange(
+                    beatmap, slider, invalidStart, 2000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "startExclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The start time must be finite.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlaySliderEdgesInTimeRange_WhenEndIsNotFinite_ThrowsArgumentOutOfRangeException(
+        double invalidEnd)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderEdgesInTimeRange(
+                    beatmap, slider, 0, invalidEnd,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The end time must be finite.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlaySliderEdgesInTimeRange_WhenEndPrecedesStart_ThrowsArgumentOutOfRangeException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderEdgesInTimeRange(
+                    beatmap, slider, 2000, 1000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "endInclusiveMilliseconds",
+            exception.ParamName);
+
+        Assert.Contains(
+            "The end time must be greater than or equal to the start time.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void PlaySliderEdgesInTimeRange_WhenSlidesIsInvalid_ThrowsInvalidOperationException(
+        int slides)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        slider.Slides = slides;
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                service.PlaySliderEdgesInTimeRange(
+                    beatmap, slider, 0, 2000,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal(
+            "It is not possible to calculate a slider edge time because the slider must have at least one span.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_HitCircle_PlaysCustomSample()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(directory, "custom.wav");
+            WriteHalfAmplitudeWav(path);
+
+            HitObject circle = new()
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample
+                {
+                    Filename = "custom.wav",
+                    Volume = 50
+                }
+            };
+
+            TimedHitSoundEvent soundEvent = new()
+            {
+                Time = 1000,
+                HitObject = circle,
+                EventType = HitSoundEventType.HitCircle
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, new Beatmap(),
+                    directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleFound,
+                result.Outcome);
+            Assert.Equal(path, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_HitCircle_WhenCustomSampleIsMissing_ReturnsMissing()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            HitObject circle = new()
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample
+                {
+                    Filename = "missing.wav"
+                }
+            };
+
+            TimedHitSoundEvent soundEvent = new()
+            {
+                Time = 1000,
+                HitObject = circle,
+                EventType = HitSoundEventType.HitCircle
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            SampleResolutionResult result = Assert.Single(
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, new Beatmap(),
+                    directory, resolver, engine));
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleMissing,
+                result.Outcome);
+            Assert.Null(result.ResolvedPath);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_SliderEdge_Head_PlaysCorrectSample()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(
+                directory, "normal-hitnormal.wav");
+
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            TimedHitSoundEvent soundEvent = new()
+            {
+                Time = 1000,
+                HitObject = slider,
+                EventType = HitSoundEventType.SliderEdge,
+                EdgeIndex = 0
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            SampleResolutionResult result = Assert.Single(
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, beatmap,
+                    directory, resolver, engine));
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+            Assert.Equal(path, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_SliderEdge_Repeat_UsesEdgeIndex()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "soft-hitnormal2.wav");
+            string clapPath = Path.Combine(
+                directory, "soft-hitclap2.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+            WriteHalfAmplitudeWav(clapPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            TimedHitSoundEvent soundEvent = new()
+            {
+                Time = 1500,
+                HitObject = slider,
+                EventType = HitSoundEventType.SliderEdge,
+                EdgeIndex = 1
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, beatmap,
+                    directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.Equal(normalPath, results[0].ResolvedPath);
+            Assert.Equal(clapPath, results[1].ResolvedPath);
+
+            Assert.All(results, result =>
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome));
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Two layers at 25% volume each.
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_SliderTick_DoesNotPlaySliderBody()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string tickPath = Path.Combine(
+                directory, "normal-slidertick.wav");
+
+            WriteHalfAmplitudeWav(tickPath);
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-sliderslide.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            slider.HitSound = 2;
+
+            TimedHitSoundEvent soundEvent = new()
+            {
+                Time = 1250,
+                HitObject = slider,
+                EventType = HitSoundEventType.SliderTick
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            SampleResolutionResult result = Assert.Single(
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, beatmap,
+                    directory, resolver, engine));
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+            Assert.Equal(tickPath, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_SliderTick_WhenSampleIsMissing_ReturnsFallback()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            TimedHitSoundEvent soundEvent = new()
+            {
+                Time = 1250,
+                HitObject = slider,
+                EventType = HitSoundEventType.SliderTick
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            SampleResolutionResult result = Assert.Single(
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, beatmap,
+                    directory, resolver, engine));
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                result.Outcome);
+            Assert.Null(result.ResolvedPath);
+            Assert.Equal(
+                "normal-slidertick.wav",
+                result.FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_SliderEdge_WhenSampleIsMissing_ReturnsFallback()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            TimedHitSoundEvent soundEvent = new()
+            {
+                Time = 1000,
+                HitObject = slider,
+                EventType = HitSoundEventType.SliderEdge,
+                EdgeIndex = 0
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            SampleResolutionResult result = Assert.Single(
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, beatmap,
+                    directory, resolver, engine));
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                result.Outcome);
+            Assert.Null(result.ResolvedPath);
+            Assert.Equal(
+                "normal-hitnormal.wav",
+                result.FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_SliderEdge_WithoutEdgeIndex_ThrowsArgumentException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        TimedHitSoundEvent soundEvent = new()
+        {
+            Time = 1500,
+            HitObject = slider,
+            EventType = HitSoundEventType.SliderEdge
+        };
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, beatmap,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("soundEvent", exception.ParamName);
+        Assert.Contains(
+            "A slider edge event requires an edge index.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(3)]
+    public void PlayTimedHitSoundEvent_SliderEdge_WhenIndexIsInvalid_PropagatesException(
+        int edgeIndex)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        TimedHitSoundEvent soundEvent = new()
+        {
+            Time = 1500,
+            HitObject = slider,
+            EventType = HitSoundEventType.SliderEdge,
+            EdgeIndex = edgeIndex
+        };
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, beatmap,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("edgeIndex", exception.ParamName);
+        Assert.Equal(edgeIndex, exception.ActualValue);
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_WhenEventTypeIsUnsupported_ThrowsArgumentOutOfRangeException()
+    {
+        TimedHitSoundEvent soundEvent = new()
+        {
+            Time = 1000,
+            HitObject = new HitObject
+            {
+                ObjectType = 1,
+                Time = 1000
+            },
+            EventType = (HitSoundEventType)999
+        };
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, new Beatmap(),
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("EventType", exception.ParamName);
+
+        Assert.Equal(
+            (HitSoundEventType)999,
+            exception.ActualValue);
+
+        Assert.Contains(
+            "The hitsound event type is not supported for playback.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_HitCircle_WhenObjectIsSlider_PropagatesException()
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+
+        TimedHitSoundEvent soundEvent = new()
+        {
+            Time = 1000,
+            HitObject = slider,
+            EventType = HitSoundEventType.HitCircle
+        };
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        Assert.Throws<ArgumentException>(() =>
+            service.PlayTimedHitSoundEvent(
+                soundEvent, beatmap,
+                "beatmap", resolver, engine));
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_SliderTick_WhenObjectIsCircle_PropagatesException()
+    {
+        TimedHitSoundEvent soundEvent = new()
+        {
+            Time = 1000,
+            HitObject = new HitObject
+            {
+                ObjectType = 1,
+                Time = 1000
+            },
+            EventType = HitSoundEventType.SliderTick
+        };
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, new Beatmap(),
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("slider", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_SliderEdge_WhenObjectIsCircle_PropagatesException()
+    {
+        TimedHitSoundEvent soundEvent = new()
+        {
+            Time = 1000,
+            HitObject = new HitObject
+            {
+                ObjectType = 1,
+                Time = 1000
+            },
+            EventType = HitSoundEventType.SliderEdge,
+            EdgeIndex = 0
+        };
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, new Beatmap(),
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("slider", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_WhenEventIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayTimedHitSoundEvent(
+                    null!, new Beatmap(),
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("soundEvent", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_WhenBeatmapIsNull_ThrowsArgumentNullException()
+    {
+        TimedHitSoundEvent soundEvent = new()
+        {
+            Time = 1000,
+            HitObject = new HitObject
+            {
+                ObjectType = 1,
+                Time = 1000
+            },
+            EventType = HitSoundEventType.HitCircle
+        };
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, null!,
+                    "beatmap", resolver, engine));
+
+        Assert.Equal("beatmap", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_WhenResolverIsNull_ThrowsArgumentNullException()
+    {
+        TimedHitSoundEvent soundEvent = new()
+        {
+            Time = 1000,
+            HitObject = new HitObject
+            {
+                ObjectType = 1,
+                Time = 1000
+            },
+            EventType = HitSoundEventType.HitCircle
+        };
+
+        var service = new HitSoundPlaybackService();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, new Beatmap(),
+                    "beatmap", null!, engine));
+
+        Assert.Equal("resolver", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_WhenEngineIsNull_ThrowsArgumentNullException()
+    {
+        TimedHitSoundEvent soundEvent = new()
+        {
+            Time = 1000,
+            HitObject = new HitObject
+            {
+                ObjectType = 1,
+                Time = 1000
+            },
+            EventType = HitSoundEventType.HitCircle
+        };
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, new Beatmap(),
+                    "beatmap", resolver, null!));
+
+        Assert.Equal("engine", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PlayTimedHitSoundEvent_WhenDirectoryIsInvalid_ThrowsArgumentException(
+        string? directory)
+    {
+        TimedHitSoundEvent soundEvent = new()
+        {
+            Time = 1000,
+            HitObject = new HitObject
+            {
+                ObjectType = 1,
+                Time = 1000
+            },
+            EventType = HitSoundEventType.HitCircle
+        };
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlayTimedHitSoundEvent(
+                    soundEvent, new Beatmap(),
+                    directory!, resolver, engine));
+
+        Assert.Equal("beatmapDirectory", exception.ParamName);
+
+        Assert.Contains(
+            "The beatmap directory must not be empty.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlayTimedHitSoundEvent_WhenSampleExistsButOutputIsNotInitialized_ThrowsInvalidOperationException()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-hitnormal.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            TimedHitSoundEvent soundEvent = new()
+            {
+                Time = 1000,
+                HitObject = slider,
+                EventType = HitSoundEventType.SliderEdge,
+                EdgeIndex = 0
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            InvalidOperationException exception =
+                Assert.Throws<InvalidOperationException>(() =>
+                    service.PlayTimedHitSoundEvent(
+                        soundEvent, beatmap,
+                        directory, resolver, engine));
+
+            Assert.Equal(
+                "The audio output has not been initialized.",
+                exception.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+}
