@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **500/500 tests passing** (full suite, 2026-10-11)
+Current full-suite checkpoint: **605/605 tests passing** (full suite, 2026-10-12)
 
 Selected infrastructure:
 
@@ -207,13 +207,21 @@ Discrete hitsound playback and event selection completed:
 - [x] Add time-range playback helpers for circles, slider edges, and slider ticks
 - [x] Define `TimedHitSoundEvent` / `HitSoundEventType` and produce chronological discrete events with `Beatmap.GetTimedHitSoundEventsInRange(...)`
 - [x] Route a discrete event to its appropriate playback method with `PlayTimedHitSoundEvent(...)`
-- [x] Verify all behavior with the complete 500-test suite
+- [x] Implement `TimedHitSoundPlaybackCursor.AdvanceTo(...)` and `SeekTo(...)` for chronological discrete event progress
+- [x] Add `PlayPendingTimedHitSoundEvents(...)` for cursor-selected immediate dispatch
+- [x] Support non-negative finite relative source delays using `OffsetSampleProvider` in `AudioPlaybackEngine.AddAudioSource(...)`
+- [x] Propagate optional relative delays through layer, circle, slider-edge, slider-tick, and timed-event playback
+- [x] Implement `QueueTimedHitSoundEventsInRange(...)` to prequeue events with delays relative to a common interval origin
+- [x] Support optional inclusive start boundaries for playback reconstruction after seek
+- [x] Verify delayed mixing, sample lifetime, overlapping events, and alignment with timeline audio using hardware-independent tests
+- [x] Verify WASAPI pause/resume, pause-seek-requeue-play, and stop/requeue sequences in focused temporary integration tests
+- [x] Verify all permanent behavior with the complete 605-test suite (2026-10-12)
 
 Next:
 
-- [ ] Connect chronological `TimedHitSoundEvent` processing to playback progress, with explicit seek and pause semantics
-- [ ] Design accurate audio-clock scheduling; current playback methods add sources immediately and are not a time-accurate scheduler
-- [ ] Implement continuous slider-body playback separately from discrete slider edges and ticks
+- [ ] Design and test fixed-duration looping of slider-body samples (`SliderSlide` / `SliderWhistle`) before connecting it to the slider body
+- [ ] Design accurate audio-clock scheduling during active playback; prequeueing before the mixer advances is not a real-time scheduler
+- [ ] Coordinate seek, pause, stop, and queue reconstruction in the eventual playback controller
 - [ ] Connect the rendered-position timeline clock to the eventual editor timeline/UI
 - [ ] Handle device errors and runtime recovery beyond partial-initialization cleanup
 

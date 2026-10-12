@@ -4,7 +4,7 @@ namespace OsuHitsoundEditor;
 
 public class HitSoundPlaybackService
 {
-    public SampleResolutionResult PlayHitSoundLayer(HitSoundLayer layer, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine)
+    public SampleResolutionResult PlayHitSoundLayer(HitSoundLayer layer, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, double delayMilliseconds = 0)
     {
         ArgumentNullException.ThrowIfNull(layer);
         ArgumentNullException.ThrowIfNull(resolver);
@@ -14,6 +14,13 @@ public class HitSoundPlaybackService
             throw new ArgumentException(
                 "The beatmap directory must not be empty.",
                 nameof(beatmapDirectory));
+        }
+        if (!double.IsFinite(delayMilliseconds) || delayMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayMilliseconds),
+                delayMilliseconds,
+                "The audio delay must be finite and non-negative.");
         }
         SampleResolutionResult result = resolver.ResolveSample(layer, beatmapDirectory);
         if (result.Outcome == SampleResolutionOutcome.CustomSampleMissing)
@@ -31,13 +38,13 @@ public class HitSoundPlaybackService
                 throw new InvalidOperationException(
                     "A successful sample resolution must include a playable file path.");
             }
-            engine.AddAudioSource(result.ResolvedPath, layer.Volume);
+            engine.AddAudioSource(result.ResolvedPath, layer.Volume, delayMilliseconds);
             return result;
         }
         throw new InvalidOperationException(
             $"The sample resolution outcome '{result.Outcome}' is not supported for playback.");
     }
-    public List<SampleResolutionResult> PlayHitSoundLayers(IReadOnlyList<HitSoundLayer> layers, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine)
+    public List<SampleResolutionResult> PlayHitSoundLayers(IReadOnlyList<HitSoundLayer> layers, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, double delayMilliseconds = 0)
     {
         ArgumentNullException.ThrowIfNull(layers);
         ArgumentNullException.ThrowIfNull(resolver);
@@ -48,17 +55,23 @@ public class HitSoundPlaybackService
                 "The beatmap directory must not be empty.",
                 nameof(beatmapDirectory));
         }
-
+        if (!double.IsFinite(delayMilliseconds) || delayMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayMilliseconds),
+                delayMilliseconds,
+                "The audio delay must be finite and non-negative.");
+        }
         List<SampleResolutionResult> results = new List<SampleResolutionResult>();
         SampleResolutionResult result;
         foreach (var layer in layers)
         {
-            result = PlayHitSoundLayer(layer, beatmapDirectory, resolver, engine);
+            result = PlayHitSoundLayer(layer, beatmapDirectory, resolver, engine, delayMilliseconds);
             results.Add(result);
         }
         return results;
     }
-    public List<SampleResolutionResult> PlayHitCircle(Beatmap beatmap, HitObject hitObject, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine)
+    public List<SampleResolutionResult> PlayHitCircle(Beatmap beatmap, HitObject hitObject, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, double delayMilliseconds = 0)
     {
         ArgumentNullException.ThrowIfNull(beatmap);
         ArgumentNullException.ThrowIfNull(hitObject);
@@ -68,11 +81,18 @@ public class HitSoundPlaybackService
                 "The hit object must be a hit circle.",
                 nameof(hitObject));
         }
+        if (!double.IsFinite(delayMilliseconds) || delayMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayMilliseconds),
+                delayMilliseconds,
+                "The audio delay must be finite and non-negative.");
+        }
         List<HitSoundLayer> layers = beatmap.GetHitSoundLayers(hitObject);
-        List<SampleResolutionResult> results = PlayHitSoundLayers(layers, beatmapDirectory, resolver, engine);
+        List<SampleResolutionResult> results = PlayHitSoundLayers(layers, beatmapDirectory, resolver, engine, delayMilliseconds);
         return results;
     }
-    public List<SampleResolutionResult> PlaySliderEdge(Beatmap beatmap, HitObject slider, int edgeIndex, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine)
+    public List<SampleResolutionResult> PlaySliderEdge(Beatmap beatmap, HitObject slider, int edgeIndex, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, double delayMilliseconds = 0)
     {
         ArgumentNullException.ThrowIfNull(beatmap);
         ArgumentNullException.ThrowIfNull(slider);
@@ -82,8 +102,15 @@ public class HitSoundPlaybackService
                 "The hit object must be a slider.",
                 nameof(slider));
         }
+        if (!double.IsFinite(delayMilliseconds) || delayMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayMilliseconds),
+                delayMilliseconds,
+                "The audio delay must be finite and non-negative.");
+        }
         List<HitSoundLayer> layers = beatmap.GetSliderEdgeHitSoundLayers(slider, edgeIndex);
-        List<SampleResolutionResult> results = PlayHitSoundLayers(layers, beatmapDirectory, resolver, engine);
+        List<SampleResolutionResult> results = PlayHitSoundLayers(layers, beatmapDirectory, resolver, engine, delayMilliseconds);
         return results;
     }
     public List<(int EdgeIndex, double EdgeTime, List<SampleResolutionResult> Results)> PlaySliderEdgesInTimeRange(Beatmap beatmap, HitObject slider, double startExclusiveMilliseconds, double endInclusiveMilliseconds, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine)
@@ -109,7 +136,7 @@ public class HitSoundPlaybackService
         }
         return results;
     }
-    public List<SampleResolutionResult> PlaySliderTick(Beatmap beatmap, HitObject slider, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine)
+    public List<SampleResolutionResult> PlaySliderTick(Beatmap beatmap, HitObject slider, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, double delayMilliseconds = 0)
     {
         ArgumentNullException.ThrowIfNull(beatmap);
         ArgumentNullException.ThrowIfNull(slider);
@@ -119,8 +146,15 @@ public class HitSoundPlaybackService
                 "The hit object must be a slider.",
                 nameof(slider));
         }
+        if (!double.IsFinite(delayMilliseconds) || delayMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayMilliseconds),
+                delayMilliseconds,
+                "The audio delay must be finite and non-negative.");
+        }
         List<HitSoundLayer> layers = beatmap.GetSliderTickHitSoundLayers(slider);
-        List<SampleResolutionResult> results = PlayHitSoundLayers(layers, beatmapDirectory, resolver, engine);
+        List<SampleResolutionResult> results = PlayHitSoundLayers(layers, beatmapDirectory, resolver, engine, delayMilliseconds);
         return results;
     }
     public List<(double TickTime, List<SampleResolutionResult> Results)> PlaySliderTicksInTimeRange(Beatmap beatmap, HitObject slider, double startExclusiveMilliseconds, double endInclusiveMilliseconds, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine)
@@ -146,7 +180,7 @@ public class HitSoundPlaybackService
         return results;
 
     }
-    public List<SampleResolutionResult> PlayTimedHitSoundEvent(TimedHitSoundEvent soundEvent, Beatmap beatmap, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine)
+    public List<SampleResolutionResult> PlayTimedHitSoundEvent(TimedHitSoundEvent soundEvent, Beatmap beatmap, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, double delayMilliseconds = 0)
     {
         ArgumentNullException.ThrowIfNull(soundEvent);
         ArgumentNullException.ThrowIfNull(beatmap);
@@ -158,10 +192,17 @@ public class HitSoundPlaybackService
                 "The beatmap directory must not be empty.",
                 nameof(beatmapDirectory));
         }
+        if (!double.IsFinite(delayMilliseconds) || delayMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayMilliseconds),
+                delayMilliseconds,
+                "The audio delay must be finite and non-negative.");
+        }
         switch (soundEvent.EventType)
         {
             case HitSoundEventType.HitCircle:
-                return PlayHitCircle(beatmap, soundEvent.HitObject, beatmapDirectory, resolver, engine);
+                return PlayHitCircle(beatmap, soundEvent.HitObject, beatmapDirectory, resolver, engine, delayMilliseconds);
             case HitSoundEventType.SliderEdge:
                 if (soundEvent.EdgeIndex == null)
                 {
@@ -169,9 +210,9 @@ public class HitSoundPlaybackService
                         "A slider edge event requires an edge index.",
                         nameof(soundEvent));
                 }
-                return PlaySliderEdge(beatmap, soundEvent.HitObject, soundEvent.EdgeIndex.Value, beatmapDirectory, resolver, engine);
+                return PlaySliderEdge(beatmap, soundEvent.HitObject, soundEvent.EdgeIndex.Value, beatmapDirectory, resolver, engine, delayMilliseconds);
             case HitSoundEventType.SliderTick:
-                return PlaySliderTick(beatmap, soundEvent.HitObject, beatmapDirectory, resolver, engine);
+                return PlaySliderTick(beatmap, soundEvent.HitObject, beatmapDirectory, resolver, engine, delayMilliseconds);
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(soundEvent.EventType),
@@ -217,6 +258,75 @@ public class HitSoundPlaybackService
         {
             List<SampleResolutionResult> layerResults = PlayHitCircle(beatmap, hitCircle, beatmapDirectory, resolver, engine);
             results.Add((hitCircle, layerResults));
+        }
+        return results;
+    }
+    public List<(TimedHitSoundEvent Event, List<SampleResolutionResult> Results)> PlayPendingTimedHitSoundEvents(Beatmap beatmap, TimedHitSoundPlaybackCursor cursor, double currentPositionMilliseconds, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine)
+    {
+        ArgumentNullException.ThrowIfNull(beatmap);
+        ArgumentNullException.ThrowIfNull(cursor);
+        ArgumentNullException.ThrowIfNull(resolver);
+        ArgumentNullException.ThrowIfNull(engine);
+        if (string.IsNullOrWhiteSpace(beatmapDirectory))
+        {
+            throw new ArgumentException(
+                "The beatmap directory must not be empty.",
+                nameof(beatmapDirectory));
+        }
+        List<TimedHitSoundEvent> pendingEvents = cursor.AdvanceTo(beatmap, currentPositionMilliseconds);
+        List<(TimedHitSoundEvent Event, List<SampleResolutionResult> Results)> results = new List<(TimedHitSoundEvent Event, List<SampleResolutionResult> Results)>();
+        foreach (var soundEvent in pendingEvents)
+        {
+            List<SampleResolutionResult> eventResults = PlayTimedHitSoundEvent(soundEvent, beatmap, beatmapDirectory, resolver, engine);
+            results.Add((soundEvent, eventResults));
+        }
+        return results;
+    }
+    public List<(TimedHitSoundEvent Event, List<SampleResolutionResult> Results)> QueueTimedHitSoundEventsInRange(Beatmap beatmap, double startMilliseconds, double endMilliseconds, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, bool includeStart = false)
+    {
+        ArgumentNullException.ThrowIfNull(beatmap);
+        ArgumentNullException.ThrowIfNull(resolver);
+        ArgumentNullException.ThrowIfNull(engine);
+        if (string.IsNullOrWhiteSpace(beatmapDirectory))
+        {
+            throw new ArgumentException(
+                "The beatmap directory must not be empty.",
+                nameof(beatmapDirectory));
+        }
+        if (!double.IsFinite(startMilliseconds) || startMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(startMilliseconds),
+                startMilliseconds,
+                "The interval start must be finite and non-negative.");
+        }
+        if (!double.IsFinite(endMilliseconds) || endMilliseconds < startMilliseconds)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endMilliseconds),
+                endMilliseconds,
+                "The interval end must be finite and greater than or equal to the start.");
+        }
+        double startExclusiveMilliseconds;
+        if (startMilliseconds == 0)
+        {
+            startExclusiveMilliseconds = -1;
+        }
+        else if (includeStart == true)
+        {
+            startExclusiveMilliseconds = Math.BitDecrement(startMilliseconds);
+        }
+        else
+        {
+            startExclusiveMilliseconds = startMilliseconds;
+        }
+        List<TimedHitSoundEvent> events = beatmap.GetTimedHitSoundEventsInRange(startExclusiveMilliseconds, endMilliseconds);
+        List<(TimedHitSoundEvent Event, List<SampleResolutionResult> Results)> results = new List<(TimedHitSoundEvent Event, List<SampleResolutionResult> Result)>();
+        foreach(var soundEvent in events)
+        {
+            double delayMilliseconds = soundEvent.Time - startMilliseconds;
+            List<SampleResolutionResult> eventResults = PlayTimedHitSoundEvent(soundEvent, beatmap, beatmapDirectory, resolver, engine, delayMilliseconds);
+            results.Add((soundEvent, eventResults));
         }
         return results;
     }

@@ -12,15 +12,15 @@ Its purpose is to provide a visual reference for how `.osu` data is parsed, how 
 
 Parsing, logical hitsound resolution, and the current physical sample-resolution boundary are complete. The project is in **Audio Infrastructure**.
 
-Verified checkpoint (2026-10-11):
+Verified checkpoint (2026-10-12):
 
 ```text
-500/500 automated tests passing (full suite)
+605/605 automated tests passing (full suite)
 ```
 
-The audio engine supports decoding, normalized mixing, timeline seek, and rendered-position reporting. `HitSoundPlaybackService` resolves and immediately adds discrete hit-circle, slider-edge, and slider-tick samples to the mixer. `Beatmap` can enumerate these events chronologically through `TimedHitSoundEvent`.
+The audio engine supports decoding, normalized mixing, timeline seek, rendered-position reporting, and relative source delays through `OffsetSampleProvider`. `Beatmap` enumerates chronological discrete hitsound events, and `TimedHitSoundPlaybackCursor` tracks selection progress. `HitSoundPlaybackService` can dispatch events immediately or prequeue a bounded interval before playback using each event's time relative to the interval origin.
 
-Precise scheduling, continuous slider-body audio, editor UI, export, and optimization remain future work. The presence of a timestamp on an event does not yet imply scheduled playback.
+Prequeueing is verified against mixer frames and timeline audio. It is **not** an active-playback, audio-clock-driven scheduler. Continuous slider-body audio, real-time scheduling, editor UI, export, and optimization remain future work.
 
 ---
 
@@ -666,27 +666,33 @@ flowchart TD
     C -. future .-> S[Export / optimization]
 ```
 
-The audio path currently triggers selected hitsounds immediately. The dashed branches indicate future scheduling, editor, export, and optimization functionality.
+The audio path can dispatch selected hitsounds immediately or prequeue discrete events before the mixer starts consuming audio. Prequeueing converts each absolute event time into a delay relative to one common interval start. The dashed branches indicate future active-playback scheduling, editor, export, and optimization functionality.
 
 ---
 
 ## Current Architectural Boundary
 
-The current implementation reaches discrete hitsound playback without implementing an editor timeline or time-accurate scheduler.
+The current implementation reaches discrete hitsound playback and prequeueing without implementing an editor timeline or active-playback time-accurate scheduler.
 
 Implemented:
 
 ```text
 .osu parsing -> logical HitSoundLayer -> SampleResolver
-            -> SampleResolutionResult -> immediate mixer input (if found)
+            -> SampleResolutionResult -> mixer input (if found)
 
 Beatmap -> GetTimedHitSoundEventsInRange(...) -> timed discrete events
-TimedHitSoundEvent -> PlayTimedHitSoundEvent(...) -> appropriate playback method
+TimedHitSoundEvent -> PlayTimedHitSoundEvent(...) -> immediate dispatch or optional delay
+TimedHitSoundPlaybackCursor -> AdvanceTo(...) / SeekTo(...) -> event selection progress
+QueueTimedHitSoundEventsInRange(...) -> per-event relative delay -> prequeued mixer inputs
 ```
 
-`HitCirclePlaybackCursor` tracks only hit-circle progress; the unified event representation does not yet have a complete playback cursor. Range playback helpers dispatch all matching events immediately rather than delaying individual sounds until their timestamps.
+`AudioPlaybackEngine.AddAudioSource(...)` accepts an optional finite, non-negative `delayMilliseconds`; `OffsetSampleProvider` inserts initial silence in whole mixer frames. The mixer-input provider is also the key used to release its underlying reader when playback ends.
 
-Not implemented yet: precise audio-clock scheduling, continuous slider-body playback, editor timeline/UI, deterministic export/reload/equivalence verification, and sample optimization.
+`QueueTimedHitSoundEventsInRange(...)` selects a chronological interval and computes `event.Time - startMilliseconds`. By default the interval is `(start, end]`, except that a start at zero includes events at zero. An optional `includeStart` includes an event at a positive start boundary, supporting post-seek reconstruction. Sources must be queued **before** the mixer advances through the interval; adding them after playback has progressed does not retrospectively align their timestamps.
+
+Focused device tests confirmed pause/resume, pause-seek-requeue-play, and stop/requeue with a loaded timeline. These are integration checks, not permanent device-dependent suite tests. Current `Stop()` has a separate limitation when no timeline audio is loaded.
+
+Not implemented yet: accurate scheduling while audio is actively advancing, continuous slider-body playback, editor timeline/UI, deterministic export/reload/equivalence verification, and sample optimization.
 
 ---
 
@@ -697,7 +703,7 @@ The project uses **xUnit** for automated testing.
 Current checkpoint:
 
 ```text
-500/500 tests passing (full suite, 2026-10-11)
+605/605 tests passing (full suite, 2026-10-12)
 ```
 
 The test suite currently covers:
@@ -735,6 +741,10 @@ audio opening, normalization, mixer control, timeline seeking and playback volum
 hit-circle, slider-edge, and slider-tick playback and interval selection
 hit-circle cursor advancement and seeking
 chronological TimedHitSoundEvent generation and playback dispatch
+unified TimedHitSoundPlaybackCursor advancement/seek
+relative delayed playback and mixer-reader cleanup
+prequeued interval playback, inclusive boundaries, and overlapping hitsounds
+shared-origin mixing of prequeued hitsounds with timeline audio
 ```
 
 The tests are located under:
@@ -746,6 +756,7 @@ tests/
     ├── BeatmapLoaderTests.cs
     ├── TestOrganizationTests.cs
     ├── HitCirclePlaybackCursorTests.cs
+    ├── TimedHitSoundPlaybackCursorTests.cs
     ├── HitSoundPlaybackServiceTests.cs
     ├── AudioPlaybackEngineTests.cs
     └── TestData/
@@ -772,9 +783,9 @@ Deferred until needed: defining a stable logical `SampleId` and loading addition
 
 ### Audio Infrastructure
 
-Implemented: NAudio decoding, output/mixer lifetime, timeline playback and seek, per-source volume, discrete hitsound dispatch, event-range selection, and chronological event representation.
+Implemented: NAudio decoding, output/mixer lifetime, timeline playback and seek, per-source volume, chronological event selection with `TimedHitSoundPlaybackCursor`, relative delayed sample playback, and bounded prequeueing before the mixer advances. Focused real-device checks covered pause/resume, seek/requeue, and stop/requeue.
 
-Remaining: integration of chronological playback progress, accurate scheduled triggering, continuous slider-body audio, editor-timeline integration, and runtime device-error recovery. NAudio is the selected external audio infrastructure.
+Remaining: accurate scheduling while playback is active, continuous slider-body audio, playback-controller coordination, editor-timeline integration, and runtime device-error recovery. NAudio is the selected external audio infrastructure.
 
 ### Desktop Editor and Timeline
 

@@ -22,7 +22,7 @@ This project exists for two main reasons.
 
 The project is still in an early stage of development and is not yet a complete end-user tool. The beatmap parsing, hitsound-resolution, and physical sample-resolution layers are already in place, and the current focus is the audio infrastructure.
 
-Basic audio decoding and WASAPI playback foundations are implemented. The remaining work in this stage includes reliable timeline playback, seeking, and keeping the playback position synchronized with the editor timeline. The desktop editor, export workflow, and sample optimization are still planned for later stages.
+Audio decoding, WASAPI playback, timeline seeking, and discrete hitsound playback are implemented. Discrete events can also be queued ahead of playback at relative times in the mixer; this is not yet a scheduler for adding events during active playback. Continuous slider-body audio and integration with the future editor timeline remain unfinished. The desktop editor, export workflow, and sample optimization are planned for later stages.
 
 > [!NOTE]
 > This project is still under active development. The core parsing, hitsound-resolution, physical sample-resolution, and early audio infrastructure layers already exist, but the desktop editing interface is not implemented yet.
@@ -36,7 +36,8 @@ Basic audio decoding and WASAPI playback foundations are implemented. The remain
 - Resolve logical hitsound layers
 - Resolve physical sample files inside the beatmap
 - Decode MP3, WAV, and OGG audio
-- Provide the foundation for audio playback through WASAPI
+- Play and mix discrete hit-circle, slider-edge, and slider-tick samples through WASAPI
+- Prequeue discrete events at relative offsets before playback and rebuild their queue after seeking
 
 ### Planned
 

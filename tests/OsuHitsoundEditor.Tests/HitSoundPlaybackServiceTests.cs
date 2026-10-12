@@ -4796,4 +4796,1847 @@ public class HitSoundPlaybackServiceTests
         }
     }
 
+    [Fact]
+    public void PlayPendingTimedHitSoundEvents_WhenBeatmapIsEmpty_ReturnsEmpty()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var cursor = new TimedHitSoundPlaybackCursor();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        var result = service.PlayPendingTimedHitSoundEvents(
+            beatmap, cursor, 1000, "beatmap", resolver, engine);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void PlayPendingTimedHitSoundEvents_ConsecutiveAdvances_DoNotRepeatEvents()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            var beatmap = new Beatmap();
+
+            HitObject atZero = new()
+            {
+                ObjectType = 1,
+                Time = 0,
+                HitSample = new HitSample { Filename = "missing-a.wav" }
+            };
+
+            HitObject at500 = new()
+            {
+                ObjectType = 1,
+                Time = 500,
+                HitSample = new HitSample { Filename = "missing-b.wav" }
+            };
+
+            HitObject at1000 = new()
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample { Filename = "missing-c.wav" }
+            };
+
+            beatmap.HitObjects.AddRange(new[] { atZero, at500, at1000 });
+
+            var service = new HitSoundPlaybackService();
+            var cursor = new TimedHitSoundPlaybackCursor();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            var first = service.PlayPendingTimedHitSoundEvents(
+                beatmap, cursor, 500, directory, resolver, engine);
+
+            var second = service.PlayPendingTimedHitSoundEvents(
+                beatmap, cursor, 1000, directory, resolver, engine);
+
+            var repeated = service.PlayPendingTimedHitSoundEvents(
+                beatmap, cursor, 1000, directory, resolver, engine);
+
+            Assert.Equal(
+                new double[] { 0, 500 },
+                first.Select(item => item.Event.Time));
+
+            Assert.Equal(
+                new double[] { 1000 },
+                second.Select(item => item.Event.Time));
+
+            Assert.Same(atZero, first[0].Event.HitObject);
+            Assert.Same(at500, first[1].Event.HitObject);
+            Assert.Same(at1000, second[0].Event.HitObject);
+
+            Assert.Empty(repeated);
+
+            Assert.All(first.Concat(second), item =>
+                Assert.Equal(
+                    SampleResolutionOutcome.CustomSampleMissing,
+                    Assert.Single(item.Results).Outcome));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayPendingTimedHitSoundEvents_MixedEvents_PreservesChronologicalResults()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            beatmap.BeatmapVersion = 14;
+            beatmap.SliderTickRate = 4;
+
+            HitObject circle = new()
+            {
+                ObjectType = 1,
+                Time = 1250,
+                HitSample = new HitSample { Filename = "missing.wav" }
+            };
+
+            beatmap.HitObjects.AddRange(new[] { slider, circle });
+
+            var service = new HitSoundPlaybackService();
+            var cursor = new TimedHitSoundPlaybackCursor();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            var result = service.PlayPendingTimedHitSoundEvents(
+                beatmap, cursor, 2000, directory, resolver, engine);
+
+            Assert.Equal(10, result.Count);
+
+            Assert.Equal(
+                new double[]
+                {
+                1000, 1125, 1250, 1250, 1375,
+                1500, 1625, 1750, 1875, 2000
+                },
+                result.Select(item => item.Event.Time));
+
+            Assert.Equal(
+                HitSoundEventType.SliderEdge,
+                result[0].Event.EventType);
+
+            Assert.Equal(0, result[0].Event.EdgeIndex);
+            Assert.Same(slider, result[0].Event.HitObject);
+
+            Assert.Equal(
+                HitSoundEventType.SliderTick,
+                result[1].Event.EventType);
+
+            Assert.Equal(
+                HitSoundEventType.HitCircle,
+                result[2].Event.EventType);
+
+            Assert.Same(circle, result[2].Event.HitObject);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleMissing,
+                Assert.Single(result[2].Results).Outcome);
+
+            Assert.Equal(
+                HitSoundEventType.SliderEdge,
+                result[5].Event.EventType);
+
+            Assert.Equal(1, result[5].Event.EdgeIndex);
+            Assert.Equal(2, result[5].Results.Count);
+
+            Assert.Equal(
+                HitSoundEventType.SliderEdge,
+                result[^1].Event.EventType);
+
+            Assert.Equal(2, result[^1].Event.EdgeIndex);
+
+            Assert.All(result, item =>
+                Assert.NotEmpty(item.Results));
+
+            Assert.All(
+                result.Where(item =>
+                    item.Event.EventType != HitSoundEventType.HitCircle),
+                item =>
+                    Assert.All(item.Results, sample =>
+                        Assert.Equal(
+                            SampleResolutionOutcome.ExternalFallbackRequired,
+                            sample.Outcome)));
+
+            Assert.Empty(service.PlayPendingTimedHitSoundEvents(
+                beatmap, cursor, 2000, directory, resolver, engine));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayPendingTimedHitSoundEvents_AfterSeekToZero_ReplaysZeroTimeEvent()
+    {
+        var beatmap = new Beatmap();
+
+        HitObject atZero = new()
+        {
+            ObjectType = 1,
+            Time = 0,
+            HitSample = new HitSample { Filename = "missing.wav" }
+        };
+
+        beatmap.HitObjects.Add(atZero);
+
+        var service = new HitSoundPlaybackService();
+        var cursor = new TimedHitSoundPlaybackCursor();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        Assert.Single(service.PlayPendingTimedHitSoundEvents(
+            beatmap, cursor, 100, "beatmap", resolver, engine));
+
+        cursor.SeekTo(0);
+
+        var result = service.PlayPendingTimedHitSoundEvents(
+            beatmap, cursor, 0, "beatmap", resolver, engine);
+
+        Assert.Same(atZero, Assert.Single(result).Event.HitObject);
+
+        Assert.Empty(service.PlayPendingTimedHitSoundEvents(
+            beatmap, cursor, 0, "beatmap", resolver, engine));
+    }
+
+    [Fact]
+    public void PlayPendingTimedHitSoundEvents_AfterSeek_ExcludesSeekBoundary()
+    {
+        var beatmap = new Beatmap();
+
+        HitObject atBoundary = new()
+        {
+            ObjectType = 1,
+            Time = 1000,
+            HitSample = new HitSample { Filename = "missing-a.wav" }
+        };
+
+        HitObject afterBoundary = new()
+        {
+            ObjectType = 1,
+            Time = 1200,
+            HitSample = new HitSample { Filename = "missing-b.wav" }
+        };
+
+        beatmap.HitObjects.AddRange(new[] { atBoundary, afterBoundary });
+
+        var service = new HitSoundPlaybackService();
+        var cursor = new TimedHitSoundPlaybackCursor();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        Assert.Equal(2, service.PlayPendingTimedHitSoundEvents(
+            beatmap, cursor, 1200, "beatmap", resolver, engine).Count);
+
+        cursor.SeekTo(1000);
+
+        var result = service.PlayPendingTimedHitSoundEvents(
+            beatmap, cursor, 1200, "beatmap", resolver, engine);
+
+        Assert.Same(
+            afterBoundary,
+            Assert.Single(result).Event.HitObject);
+    }
+
+    [Fact]
+    public void PlayPendingTimedHitSoundEvents_WhenPositionIsInvalid_PreservesCursor()
+    {
+        var beatmap = new Beatmap();
+
+        HitObject circle = new()
+        {
+            ObjectType = 1,
+            Time = 500,
+            HitSample = new HitSample { Filename = "missing.wav" }
+        };
+
+        beatmap.HitObjects.Add(circle);
+
+        var service = new HitSoundPlaybackService();
+        var cursor = new TimedHitSoundPlaybackCursor();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlayPendingTimedHitSoundEvents(
+                    beatmap, cursor, -1, "beatmap", resolver, engine));
+
+        Assert.Equal("currentPositionMilliseconds", exception.ParamName);
+
+        var result = service.PlayPendingTimedHitSoundEvents(
+            beatmap, cursor, 500, "beatmap", resolver, engine);
+
+        Assert.Same(circle, Assert.Single(result).Event.HitObject);
+    }
+
+    [Fact]
+    public void PlayPendingTimedHitSoundEvents_WhenBeatmapIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var cursor = new TimedHitSoundPlaybackCursor();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayPendingTimedHitSoundEvents(
+                    null!, cursor, 1000, "beatmap", resolver, engine));
+
+        Assert.Equal("beatmap", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayPendingTimedHitSoundEvents_WhenCursorIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayPendingTimedHitSoundEvents(
+                    beatmap, null!, 1000, "beatmap", resolver, engine));
+
+        Assert.Equal("cursor", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayPendingTimedHitSoundEvents_WhenResolverIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var cursor = new TimedHitSoundPlaybackCursor();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayPendingTimedHitSoundEvents(
+                    beatmap, cursor, 1000, "beatmap", null!, engine));
+
+        Assert.Equal("resolver", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlayPendingTimedHitSoundEvents_WhenEngineIsNull_ThrowsArgumentNullException()
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var cursor = new TimedHitSoundPlaybackCursor();
+        var resolver = new SampleResolver();
+
+        ArgumentNullException exception =
+            Assert.Throws<ArgumentNullException>(() =>
+                service.PlayPendingTimedHitSoundEvents(
+                    beatmap, cursor, 1000, "beatmap", resolver, null!));
+
+        Assert.Equal("engine", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PlayPendingTimedHitSoundEvents_WhenDirectoryIsInvalid_ThrowsArgumentException(
+        string? invalidDirectory)
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var cursor = new TimedHitSoundPlaybackCursor();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlayPendingTimedHitSoundEvents(
+                    beatmap, cursor, 1000,
+                    invalidDirectory!, resolver, engine));
+
+        Assert.Equal("beatmapDirectory", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlayHitSoundLayer_WhenDelayIsInvalid_ThrowsArgumentOutOfRangeException(
+        double invalidDelay)
+    {
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        var layer = new HitSoundLayer();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlayHitSoundLayer(
+                    layer,
+                    "beatmap",
+                    resolver,
+                    engine,
+                    invalidDelay));
+
+        Assert.Equal("delayMilliseconds", exception.ParamName);
+        Assert.Equal(invalidDelay, exception.ActualValue);
+        Assert.Contains(
+            "The audio delay must be finite and non-negative.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PlayHitSoundLayer_WhenDelayIsProvided_StartsAtExpectedFrame(
+        bool custom)
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string filename = custom
+                ? "custom.wav"
+                : "normal-hitnormal.wav";
+
+            string path = Path.Combine(directory, filename);
+            WriteHalfAmplitudeWav(path);
+
+            var layer = new HitSoundLayer
+            {
+                Type = custom
+                    ? HitSoundType.Custom
+                    : HitSoundType.Normal,
+                Filename = custom ? filename : string.Empty,
+                SampleSet = SampleSetType.Normal,
+                SampleIndex = 1,
+                Volume = 50
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            SampleResolutionResult result =
+                service.PlayHitSoundLayer(
+                    layer,
+                    directory,
+                    resolver,
+                    engine,
+                    delayMilliseconds: 1);
+
+            Assert.Equal(
+                custom
+                    ? SampleResolutionOutcome.CustomSampleFound
+                    : SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(path, result.ResolvedPath);
+
+            // 1 ms at 44100 Hz becomes 44 frames.
+            // The mixer is stereo: 2 samples per frame.
+            float[] output = new float[45 * 2];
+
+            int samplesRead = mixer.Read(output.AsSpan());
+
+            Assert.Equal(output.Length, samplesRead);
+
+            // First 44 frames contain silence.
+            Assert.All(output.Take(44 * 2), sample =>
+                Assert.Equal(0f, sample));
+
+            // Frame 44 begins playing the sample.
+            Assert.InRange(output[44 * 2], 0.24f, 0.26f);
+            Assert.InRange(output[44 * 2 + 1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PlayHitSoundLayer_WhenSampleIsMissing_WithDelay_DoesNotAttemptPlayback(
+        bool custom)
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            var layer = new HitSoundLayer
+            {
+                Type = custom
+                    ? HitSoundType.Custom
+                    : HitSoundType.Normal,
+                Filename = custom ? "missing.wav" : string.Empty,
+                SampleSet = SampleSetType.Normal,
+                SampleIndex = 1,
+                Volume = 50
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            SampleResolutionResult result =
+                service.PlayHitSoundLayer(
+                    layer,
+                    directory,
+                    resolver,
+                    engine,
+                    delayMilliseconds: 250);
+
+            Assert.Equal(
+                custom
+                    ? SampleResolutionOutcome.CustomSampleMissing
+                    : SampleResolutionOutcome.ExternalFallbackRequired,
+                result.Outcome);
+
+            Assert.Null(result.ResolvedPath);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlayHitSoundLayers_WhenDelayIsInvalid_ThrowsArgumentOutOfRangeException(
+        double invalidDelay)
+    {
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlayHitSoundLayers(
+                    Array.Empty<HitSoundLayer>(),
+                    "beatmap",
+                    resolver,
+                    engine,
+                    invalidDelay));
+
+        Assert.Equal("delayMilliseconds", exception.ParamName);
+        Assert.Equal(invalidDelay, exception.ActualValue);
+        Assert.Contains(
+            "The audio delay must be finite and non-negative.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlayHitSoundLayers_WhenDelayIsProvided_DelaysAllLayersEqually()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "normal-hitnormal.wav");
+
+            string clapPath = Path.Combine(
+                directory, "normal-hitclap.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+            WriteHalfAmplitudeWav(clapPath);
+
+            HitSoundLayer[] layers =
+            {
+            new()
+            {
+                Type = HitSoundType.Normal,
+                SampleSet = SampleSetType.Normal,
+                SampleIndex = 1,
+                Volume = 50
+            },
+            new()
+            {
+                Type = HitSoundType.Clap,
+                SampleSet = SampleSetType.Normal,
+                SampleIndex = 1,
+                Volume = 25
+            }
+        };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlayHitSoundLayers(
+                    layers,
+                    directory,
+                    resolver,
+                    engine,
+                    delayMilliseconds: 1);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.All(results, result =>
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome));
+
+            Assert.Equal(normalPath, results[0].ResolvedPath);
+            Assert.Equal(clapPath, results[1].ResolvedPath);
+
+            // 1 ms at 44100 Hz = 44 whole frames.
+            // Stereo output = 2 samples per frame.
+            float[] output = new float[46 * 2];
+
+            int samplesRead = mixer.Read(output.AsSpan());
+
+            Assert.Equal(output.Length, samplesRead);
+
+            // Both layers must remain silent before frame 44.
+            Assert.All(output.Take(44 * 2), sample =>
+                Assert.Equal(0f, sample));
+
+            // Normal: 0.5 * 0.50 = 0.25
+            // Clap:   0.5 * 0.25 = 0.125
+            // Combined expected amplitude = 0.375
+            for (int frame = 44; frame < 46; frame++)
+            {
+                Assert.InRange(
+                    output[frame * 2],
+                    0.365f,
+                    0.385f);
+
+                Assert.InRange(
+                    output[frame * 2 + 1],
+                    0.365f,
+                    0.385f);
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitSoundLayers_WhenDelayIsProvided_WithEmptyList_ReturnsEmpty()
+    {
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        List<SampleResolutionResult> results =
+            service.PlayHitSoundLayers(
+                Array.Empty<HitSoundLayer>(),
+                "beatmap",
+                resolver,
+                engine,
+                delayMilliseconds: 250);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void PlayHitSoundLayers_WhenDelayIsProvided_WithMissingSamples_PreservesOutcomes()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            HitSoundLayer[] layers =
+            {
+            new()
+            {
+                Type = HitSoundType.Custom,
+                Filename = "missing.wav",
+                SampleSet = SampleSetType.Normal,
+                SampleIndex = 1,
+                Volume = 50
+            },
+            new()
+            {
+                Type = HitSoundType.Normal,
+                SampleSet = SampleSetType.Normal,
+                SampleIndex = 1,
+                Volume = 50
+            }
+        };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            // No output device is initialized.
+            // Missing samples must not reach the audio engine.
+            using var engine = new AudioPlaybackEngine();
+
+            List<SampleResolutionResult> results =
+                service.PlayHitSoundLayers(
+                    layers,
+                    directory,
+                    resolver,
+                    engine,
+                    delayMilliseconds: 250);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleMissing,
+                results[0].Outcome);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                results[1].Outcome);
+
+            Assert.All(results, result =>
+                Assert.Null(result.ResolvedPath));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlayHitCircle_WhenDelayIsInvalid_ThrowsArgumentOutOfRangeException(
+        double invalidDelay)
+    {
+        var service = new HitSoundPlaybackService();
+        var beatmap = new Beatmap();
+        var hitObject = new HitObject { ObjectType = 1 };
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlayHitCircle(
+                    beatmap,
+                    hitObject,
+                    "beatmap",
+                    resolver,
+                    engine,
+                    invalidDelay));
+
+        Assert.Equal("delayMilliseconds", exception.ParamName);
+        Assert.Equal(invalidDelay, exception.ActualValue);
+        Assert.Contains(
+            "The audio delay must be finite and non-negative.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlayHitCircle_WhenDelayed_PlaysNormalAndClapSimultaneously()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "normal-hitnormal.wav");
+
+            string clapPath = Path.Combine(
+                directory, "normal-hitclap.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+            WriteHalfAmplitudeWav(clapPath);
+
+            var beatmap = new Beatmap();
+            var hitObject = new HitObject
+            {
+                ObjectType = 1,
+                HitSound = 8,
+                HitSample = new HitSample
+                {
+                    NormalSet = 1,
+                    AdditionSet = 1,
+                    Index = 1,
+                    Volume = 50
+                }
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlayHitCircle(
+                    beatmap,
+                    hitObject,
+                    directory,
+                    resolver,
+                    engine,
+                    delayMilliseconds: 1);
+
+            Assert.Equal(2, results.Count);
+            Assert.Equal(normalPath, results[0].ResolvedPath);
+            Assert.Equal(clapPath, results[1].ResolvedPath);
+
+            Assert.All(results, result =>
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome));
+
+            float[] output = new float[46 * 2];
+
+            Assert.Equal(
+                output.Length,
+                mixer.Read(output.AsSpan()));
+
+            // 1 ms = 44 frames at 44100 Hz.
+            Assert.All(output.Take(44 * 2), sample =>
+                Assert.Equal(0f, sample));
+
+            // Both layers: 0.25 + 0.25 = 0.50.
+            for (int frame = 44; frame < 46; frame++)
+            {
+                Assert.InRange(
+                    output[frame * 2],
+                    0.49f,
+                    0.51f);
+
+                Assert.InRange(
+                    output[frame * 2 + 1],
+                    0.49f,
+                    0.51f);
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlayHitCircle_WhenDelayedAndClapIsMissing_PlaysNormalOnly()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "normal-hitnormal.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+
+            var beatmap = new Beatmap();
+            var hitObject = new HitObject
+            {
+                ObjectType = 1,
+                HitSound = 8,
+                HitSample = new HitSample
+                {
+                    NormalSet = 1,
+                    AdditionSet = 1,
+                    Index = 1,
+                    Volume = 50
+                }
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlayHitCircle(
+                    beatmap,
+                    hitObject,
+                    directory,
+                    resolver,
+                    engine,
+                    delayMilliseconds: 1);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                results[0].Outcome);
+
+            Assert.Equal(normalPath, results[0].ResolvedPath);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                results[1].Outcome);
+
+            Assert.Null(results[1].ResolvedPath);
+
+            float[] output = new float[45 * 2];
+
+            Assert.Equal(
+                output.Length,
+                mixer.Read(output.AsSpan()));
+
+            Assert.All(output.Take(44 * 2), sample =>
+                Assert.Equal(0f, sample));
+
+            // Only Normal: 0.5 * 0.5 = 0.25.
+            Assert.InRange(output[44 * 2], 0.24f, 0.26f);
+            Assert.InRange(output[44 * 2 + 1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlaySliderEdge_WhenDelayIsInvalid_ThrowsArgumentOutOfRangeException(
+        double invalidDelay)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderEdge(
+                    beatmap,
+                    slider,
+                    1,
+                    "beatmap",
+                    resolver,
+                    engine,
+                    invalidDelay));
+
+        Assert.Equal("delayMilliseconds", exception.ParamName);
+        Assert.Equal(invalidDelay, exception.ActualValue);
+        Assert.Contains(
+            "The audio delay must be finite and non-negative.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlaySliderEdge_WhenDelayed_RepeatPlaysBothLayersSimultaneously()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "soft-hitnormal2.wav");
+
+            string clapPath = Path.Combine(
+                directory, "soft-hitclap2.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+            WriteHalfAmplitudeWav(clapPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderEdge(
+                    beatmap,
+                    slider,
+                    1,
+                    directory,
+                    resolver,
+                    engine,
+                    delayMilliseconds: 1);
+
+            Assert.Equal(2, results.Count);
+            Assert.Equal(normalPath, results[0].ResolvedPath);
+            Assert.Equal(clapPath, results[1].ResolvedPath);
+
+            Assert.All(results, result =>
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome));
+
+            float[] output = new float[46 * 2];
+
+            Assert.Equal(
+                output.Length,
+                mixer.Read(output.AsSpan()));
+
+            // 1 ms at 44100 Hz = 44 frames.
+            Assert.All(output.Take(44 * 2), sample =>
+                Assert.Equal(0f, sample));
+
+            // Repeat edge volume comes from the timing point at 1500 ms.
+            // Each layer: 0.5 * 0.25 = 0.125.
+            // Together: 0.25.
+            for (int frame = 44; frame < 46; frame++)
+            {
+                Assert.InRange(output[frame * 2], 0.24f, 0.26f);
+                Assert.InRange(output[frame * 2 + 1], 0.24f, 0.26f);
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderEdge_WhenDelayedAndClapIsMissing_PlaysNormalOnly()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string normalPath = Path.Combine(
+                directory, "soft-hitnormal2.wav");
+
+            WriteHalfAmplitudeWav(normalPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderEdge(
+                    beatmap,
+                    slider,
+                    1,
+                    directory,
+                    resolver,
+                    engine,
+                    delayMilliseconds: 1);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                results[0].Outcome);
+
+            Assert.Equal(normalPath, results[0].ResolvedPath);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                results[1].Outcome);
+
+            Assert.Null(results[1].ResolvedPath);
+
+            float[] output = new float[45 * 2];
+
+            Assert.Equal(
+                output.Length,
+                mixer.Read(output.AsSpan()));
+
+            Assert.All(output.Take(44 * 2), sample =>
+                Assert.Equal(0f, sample));
+
+            // Only Normal: 0.5 * 0.25 = 0.125.
+            Assert.InRange(output[44 * 2], 0.115f, 0.135f);
+            Assert.InRange(output[44 * 2 + 1], 0.115f, 0.135f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlaySliderTick_WhenDelayIsInvalid_ThrowsArgumentOutOfRangeException(
+        double invalidDelay)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderTick(
+                    beatmap,
+                    slider,
+                    "beatmap",
+                    resolver,
+                    engine,
+                    invalidDelay));
+
+        Assert.Equal("delayMilliseconds", exception.ParamName);
+        Assert.Equal(invalidDelay, exception.ActualValue);
+        Assert.Contains(
+            "The audio delay must be finite and non-negative.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenDelayIsProvided_StartsAtExpectedFrame()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string tickPath = Path.Combine(
+                directory, "normal-slidertick.wav");
+
+            WriteHalfAmplitudeWav(tickPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderTick(
+                    beatmap,
+                    slider,
+                    directory,
+                    resolver,
+                    engine,
+                    delayMilliseconds: 1);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(tickPath, result.ResolvedPath);
+
+            float[] output = new float[45 * 2];
+
+            Assert.Equal(
+                output.Length,
+                mixer.Read(output.AsSpan()));
+
+            // 1 ms at 44100 Hz = 44 whole frames.
+            Assert.All(output.Take(44 * 2), sample =>
+                Assert.Equal(0f, sample));
+
+            // Tick volume comes from the slider start timing point:
+            // amplitude 0.5 * volume 50% = 0.25.
+            Assert.InRange(output[44 * 2], 0.24f, 0.26f);
+            Assert.InRange(output[44 * 2 + 1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderTick_WhenDelayIsProvided_AndSampleMissing_ReturnsFallback()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            // No audio output is initialized.
+            using var engine = new AudioPlaybackEngine();
+
+            List<SampleResolutionResult> results =
+                service.PlaySliderTick(
+                    beatmap,
+                    slider,
+                    directory,
+                    resolver,
+                    engine,
+                    delayMilliseconds: 250);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                result.Outcome);
+
+            Assert.Null(result.ResolvedPath);
+
+            Assert.Equal(
+                "normal-slidertick.wav",
+                result.FallbackFilename);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlayTimedHitSoundEvent_WhenDelayIsInvalid_ThrowsArgumentOutOfRangeException(
+        double invalidDelay)
+    {
+        var soundEvent = new TimedHitSoundEvent
+        {
+            Time = 1000,
+            HitObject = new HitObject { ObjectType = 1 },
+            EventType = HitSoundEventType.HitCircle
+        };
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlayTimedHitSoundEvent(
+                    soundEvent,
+                    new Beatmap(),
+                    "beatmap",
+                    resolver,
+                    engine,
+                    invalidDelay));
+
+        Assert.Equal("delayMilliseconds", exception.ParamName);
+        Assert.Equal(invalidDelay, exception.ActualValue);
+        Assert.Contains(
+            "The audio delay must be finite and non-negative.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(HitSoundEventType.HitCircle, "custom.wav")]
+    [InlineData(HitSoundEventType.SliderEdge, "normal-hitnormal.wav")]
+    [InlineData(HitSoundEventType.SliderTick, "normal-slidertick.wav")]
+    public void PlayTimedHitSoundEvent_WhenDelayed_PlaysCorrectEventAtExpectedFrame(
+        HitSoundEventType eventType,
+        string filename)
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(directory, filename);
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            var circle = new HitObject
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample
+                {
+                    Filename = "custom.wav",
+                    Volume = 50
+                }
+            };
+
+            var soundEvent = new TimedHitSoundEvent
+            {
+                Time = eventType == HitSoundEventType.SliderTick
+                    ? 1250
+                    : 1000,
+
+                HitObject = eventType == HitSoundEventType.HitCircle
+                    ? circle
+                    : slider,
+
+                EventType = eventType,
+
+                EdgeIndex = eventType == HitSoundEventType.SliderEdge
+                    ? 0
+                    : null
+            };
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results =
+                service.PlayTimedHitSoundEvent(
+                    soundEvent,
+                    beatmap,
+                    directory,
+                    resolver,
+                    engine,
+                    delayMilliseconds: 1);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                eventType == HitSoundEventType.HitCircle
+                    ? SampleResolutionOutcome.CustomSampleFound
+                    : SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            Assert.Equal(path, result.ResolvedPath);
+
+            // 1 ms at 44100 Hz = 44 whole frames.
+            float[] output = new float[45 * 2];
+
+            Assert.Equal(
+                output.Length,
+                mixer.Read(output.AsSpan()));
+
+            // Frames 0 through 43 must contain silence.
+            Assert.All(output.Take(44 * 2), sample =>
+                Assert.Equal(0f, sample));
+
+            // The sample begins at frame 44.
+            // Amplitude 0.5 * volume 50% = 0.25.
+            Assert.InRange(output[44 * 2], 0.24f, 0.26f);
+            Assert.InRange(output[44 * 2 + 1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1.0, 2.0, "startMilliseconds")]
+    [InlineData(double.NaN, 2.0, "startMilliseconds")]
+    [InlineData(double.PositiveInfinity, 2.0, "startMilliseconds")]
+    [InlineData(double.NegativeInfinity, 2.0, "startMilliseconds")]
+    [InlineData(0.0, -1.0, "endMilliseconds")]
+    [InlineData(0.0, double.NaN, "endMilliseconds")]
+    [InlineData(0.0, double.PositiveInfinity, "endMilliseconds")]
+    [InlineData(0.0, double.NegativeInfinity, "endMilliseconds")]
+    [InlineData(2.0, 1.0, "endMilliseconds")]
+    public void QueueTimedHitSoundEventsInRange_WhenRangeIsInvalid_ThrowsArgumentOutOfRangeException(
+        double startMilliseconds,
+        double endMilliseconds,
+        string expectedParameter)
+    {
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.QueueTimedHitSoundEventsInRange(
+                    new Beatmap(),
+                    startMilliseconds,
+                    endMilliseconds,
+                    "beatmap",
+                    resolver,
+                    engine));
+
+        Assert.Equal(expectedParameter, exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(0.0, true)]
+    [InlineData(1000.0, false)]
+    public void QueueTimedHitSoundEventsInRange_WhenBoundsAreEqual_HandlesZeroTimeBoundary(
+        double positionMilliseconds,
+        bool expectsZeroTimeEvent)
+    {
+        var beatmap = new Beatmap();
+
+        HitObject circle = new()
+        {
+            ObjectType = 1,
+            Time = 0,
+            HitSample = new HitSample
+            {
+                Filename = "missing.wav",
+                Volume = 50
+            }
+        };
+
+        beatmap.HitObjects.Add(circle);
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        var results = service.QueueTimedHitSoundEventsInRange(
+            beatmap,
+            positionMilliseconds,
+            positionMilliseconds,
+            "beatmap",
+            resolver,
+            engine);
+
+        if (expectsZeroTimeEvent)
+        {
+            var queued = Assert.Single(results);
+
+            Assert.Equal(0, queued.Event.Time);
+            Assert.Same(circle, queued.Event.HitObject);
+
+            SampleResolutionResult resolution =
+                Assert.Single(queued.Results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleMissing,
+                resolution.Outcome);
+        }
+        else
+        {
+            Assert.Empty(results);
+        }
+    }
+
+    [Fact]
+    public void QueueTimedHitSoundEventsInRange_SchedulesOverlappingCirclesAtRelativeTimes()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string firstPath = Path.Combine(directory, "first.wav");
+            string secondPath = Path.Combine(directory, "second.wav");
+
+            WriteHalfAmplitudeWav(firstPath);
+            WriteHalfAmplitudeWav(secondPath);
+
+            var beatmap = new Beatmap();
+
+            HitObject[] circles =
+            {
+            new()
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample
+                {
+                    Filename = "excluded-start.wav",
+                    Volume = 50
+                }
+            },
+            new()
+            {
+                ObjectType = 1,
+                Time = 1001,
+                HitSample = new HitSample
+                {
+                    Filename = "first.wav",
+                    Volume = 50
+                }
+            },
+            new()
+            {
+                ObjectType = 1,
+                Time = 1002,
+                HitSample = new HitSample
+                {
+                    Filename = "second.wav",
+                    Volume = 50
+                }
+            },
+            new()
+            {
+                ObjectType = 1,
+                Time = 1003,
+                HitSample = new HitSample
+                {
+                    Filename = "excluded-end.wav",
+                    Volume = 50
+                }
+            }
+        };
+
+            beatmap.HitObjects.AddRange(circles);
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            mixer.ReadFully = true;
+
+            var results = service.QueueTimedHitSoundEventsInRange(
+                beatmap,
+                startMilliseconds: 1000,
+                endMilliseconds: 1002,
+                beatmapDirectory: directory,
+                resolver: resolver,
+                engine: engine);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.Equal(1001, results[0].Event.Time);
+            Assert.Equal(1002, results[1].Event.Time);
+
+            Assert.Same(circles[1], results[0].Event.HitObject);
+            Assert.Same(circles[2], results[1].Event.HitObject);
+
+            Assert.Equal(
+                firstPath,
+                Assert.Single(results[0].Results).ResolvedPath);
+
+            Assert.Equal(
+                secondPath,
+                Assert.Single(results[1].Results).ResolvedPath);
+
+            // Each file contains 100 frames at 44100 Hz.
+            // First starts at frame 44.
+            // Second starts at frame 88.
+            // Both overlap between frames 88 and 143.
+            float[] output = new float[190 * 2];
+
+            Assert.Equal(
+                output.Length,
+                mixer.Read(output.AsSpan()));
+
+            static void AssertFrame(
+                float[] samples,
+                int frame,
+                float expectedAmplitude)
+            {
+                const float tolerance = 0.01f;
+
+                Assert.InRange(
+                    samples[frame * 2],
+                    expectedAmplitude - tolerance,
+                    expectedAmplitude + tolerance);
+
+                Assert.InRange(
+                    samples[frame * 2 + 1],
+                    expectedAmplitude - tolerance,
+                    expectedAmplitude + tolerance);
+            }
+
+            // Both sources are initially silent.
+            AssertFrame(output, 0, 0f);
+            AssertFrame(output, 43, 0f);
+
+            // Only the first source is active.
+            AssertFrame(output, 44, 0.25f);
+            AssertFrame(output, 87, 0.25f);
+
+            // Both sources overlap.
+            AssertFrame(output, 88, 0.50f);
+            AssertFrame(output, 143, 0.50f);
+
+            // Only the second source remains.
+            AssertFrame(output, 144, 0.25f);
+            AssertFrame(output, 187, 0.25f);
+
+            // Both sources have ended.
+            AssertFrame(output, 188, 0f);
+            AssertFrame(output, 189, 0f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void QueueTimedHitSoundEventsInRange_WithTimelineAudio_MixesAtCorrectFrame()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string musicPath = Path.Combine(directory, "music.wav");
+            string hitPath = Path.Combine(directory, "hit.wav");
+
+            // Music: 200 frames at half amplitude.
+            var format = new WaveFormat(44100, 16, 1);
+
+            using (var writer = new WaveFileWriter(musicPath, format))
+            {
+                byte[] audio = new byte[format.BlockAlign * 200];
+
+                for (int i = 0; i < audio.Length; i += 2)
+                {
+                    audio[i] = 0;
+                    audio[i + 1] = 64;
+                }
+
+                writer.Write(audio, 0, audio.Length);
+            }
+
+            // Hitsound: 100 frames at half amplitude.
+            WriteHalfAmplitudeWav(hitPath);
+
+            var beatmap = new Beatmap();
+
+            beatmap.HitObjects.Add(new HitObject
+            {
+                ObjectType = 1,
+                Time = 1,
+                HitSample = new HitSample
+                {
+                    Filename = "hit.wav",
+                    Volume = 50
+                }
+            });
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            mixer.ReadFully = true;
+
+            engine.LoadTimelineAudio(musicPath);
+
+            var results = service.QueueTimedHitSoundEventsInRange(
+                beatmap,
+                0,
+                2,
+                directory,
+                resolver,
+                engine);
+
+            var queued = Assert.Single(results);
+
+            Assert.Equal(1, queued.Event.Time);
+
+            SampleResolutionResult result =
+                Assert.Single(queued.Results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.CustomSampleFound,
+                result.Outcome);
+
+            Assert.Equal(hitPath, result.ResolvedPath);
+
+            float[] output = new float[150 * 2];
+
+            Assert.Equal(
+                output.Length,
+                mixer.Read(output.AsSpan()));
+
+            // Music plays alone before frame 44.
+            Assert.InRange(output[0], 0.49f, 0.51f);
+            Assert.InRange(output[43 * 2], 0.49f, 0.51f);
+
+            // At frame 44, music + hitsound overlap:
+            // Music 0.5 + hitsound (0.5 * 0.5) = 0.75.
+            Assert.InRange(output[44 * 2], 0.74f, 0.76f);
+            Assert.InRange(output[143 * 2], 0.74f, 0.76f);
+
+            // The hitsound ends; music continues.
+            Assert.InRange(output[144 * 2], 0.49f, 0.51f);
+            Assert.InRange(output[149 * 2], 0.49f, 0.51f);
+
+            // Stereo channels have equal values.
+            Assert.Equal(output[44 * 2], output[44 * 2 + 1]);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(0.0, false, true)]
+    [InlineData(0.0, true, true)]
+    [InlineData(1000.0, false, false)]
+    [InlineData(1000.0, true, true)]
+    public void QueueTimedHitSoundEventsInRange_WhenBoundsAreEqual_RespectsIncludeStart(
+        double positionMilliseconds,
+        bool includeStart,
+        bool expectsEvent)
+    {
+        var beatmap = new Beatmap();
+
+        var circle = new HitObject
+        {
+            ObjectType = 1,
+            Time = (int)positionMilliseconds,
+            HitSample = new HitSample
+            {
+                Filename = "definitely-missing-include-start.wav",
+                Volume = 50
+            }
+        };
+
+        beatmap.HitObjects.Add(circle);
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+
+        using var engine = new AudioPlaybackEngine();
+
+        var results = service.QueueTimedHitSoundEventsInRange(
+            beatmap,
+            positionMilliseconds,
+            positionMilliseconds,
+            "beatmap",
+            resolver,
+            engine,
+            includeStart);
+
+        if (!expectsEvent)
+        {
+            Assert.Empty(results);
+            return;
+        }
+
+        var queued = Assert.Single(results);
+
+        Assert.Equal(positionMilliseconds, queued.Event.Time);
+        Assert.Same(circle, queued.Event.HitObject);
+
+        SampleResolutionResult resolution =
+            Assert.Single(queued.Results);
+
+        Assert.Equal(
+            SampleResolutionOutcome.CustomSampleMissing,
+            resolution.Outcome);
+    }
+
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 2)]
+    public void QueueTimedHitSoundEventsInRange_WhenStartEventExists_SchedulesAccordingToIncludeStart(
+        bool includeStart,
+        int expectedEventCount)
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string boundaryPath = Path.Combine(
+                directory, "boundary.wav");
+
+            string laterPath = Path.Combine(
+                directory, "later.wav");
+
+            WriteHalfAmplitudeWav(boundaryPath);
+            WriteHalfAmplitudeWav(laterPath);
+
+            var beatmap = new Beatmap();
+
+            beatmap.HitObjects.Add(new HitObject
+            {
+                ObjectType = 1,
+                Time = 1000,
+                HitSample = new HitSample
+                {
+                    Filename = "boundary.wav",
+                    Volume = 50
+                }
+            });
+
+            beatmap.HitObjects.Add(new HitObject
+            {
+                ObjectType = 1,
+                Time = 1001,
+                HitSample = new HitSample
+                {
+                    Filename = "later.wav",
+                    Volume = 50
+                }
+            });
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            mixer.ReadFully = true;
+
+            var results = service.QueueTimedHitSoundEventsInRange(
+                beatmap,
+                1000,
+                1001,
+                directory,
+                resolver,
+                engine,
+                includeStart);
+
+            Assert.Equal(expectedEventCount, results.Count);
+
+            Assert.All(results, queued =>
+                Assert.Equal(
+                    SampleResolutionOutcome.CustomSampleFound,
+                    Assert.Single(queued.Results).Outcome));
+
+            Assert.Equal(1001, results[^1].Event.Time);
+            Assert.Equal(
+                laterPath,
+                Assert.Single(results[^1].Results).ResolvedPath);
+
+            if (includeStart)
+            {
+                Assert.Equal(1000, results[0].Event.Time);
+                Assert.Equal(
+                    boundaryPath,
+                    Assert.Single(results[0].Results).ResolvedPath);
+            }
+
+            float[] output = new float[145 * 2];
+
+            Assert.Equal(
+                output.Length,
+                mixer.Read(output.AsSpan()));
+
+            static void AssertFrame(
+                float[] samples,
+                int frame,
+                float expected)
+            {
+                Assert.InRange(
+                    samples[frame * 2],
+                    expected - 0.01f,
+                    expected + 0.01f);
+
+                Assert.InRange(
+                    samples[frame * 2 + 1],
+                    expected - 0.01f,
+                    expected + 0.01f);
+            }
+
+            // The boundary event starts at frame 0 only
+            // when includeStart is true.
+            float initialAmplitude = includeStart ? 0.25f : 0f;
+
+            AssertFrame(output, 0, initialAmplitude);
+            AssertFrame(output, 43, initialAmplitude);
+
+            // The event at 1001 ms starts at frame 44.
+            // With includeStart, both samples overlap.
+            float overlapAmplitude = includeStart ? 0.50f : 0.25f;
+
+            AssertFrame(output, 44, overlapAmplitude);
+            AssertFrame(output, 99, overlapAmplitude);
+
+            // The boundary sample has ended.
+            // Only the later sample remains.
+            AssertFrame(output, 100, 0.25f);
+            AssertFrame(output, 143, 0.25f);
+
+            // Both samples have ended.
+            AssertFrame(output, 144, 0f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
 }

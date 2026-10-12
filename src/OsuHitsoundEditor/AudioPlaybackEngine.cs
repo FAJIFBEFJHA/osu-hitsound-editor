@@ -173,7 +173,7 @@ public class AudioPlaybackEngine : IDisposable
             throw;
         }
     }
-    public void AddAudioSource(string filePath, int volume = 100)
+    public void AddAudioSource(string filePath, int volume = 100, double delayMilliseconds = 0)
     {
         if (volume < 0 || volume > 100)
         {
@@ -182,20 +182,45 @@ public class AudioPlaybackEngine : IDisposable
                 volume,
                 "The volume must be between 0 and 100.");
         }
+        if (!double.IsFinite(delayMilliseconds) || delayMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayMilliseconds),
+                delayMilliseconds,
+                "The audio delay must be finite and non-negative.");
+        }
         if (mixer == null)
         {
             throw new InvalidOperationException(
                 "The audio output has not been initialized.");
         }
+
         MixingSampleProvider currentMixer = mixer;
+        double delayFrames = delayMilliseconds * currentMixer.WaveFormat.SampleRate / 1000;
+        if (delayFrames > int.MaxValue / currentMixer.WaveFormat.Channels)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayMilliseconds),
+                delayMilliseconds,
+                "The audio delay exceeds the supported sample range.");
+        }
+        int delaySamples = (int)delayFrames * currentMixer.WaveFormat.Channels;
         WaveStream reader = OpenAudioFile(filePath);
         ISampleProvider normalizedProvider;
         VolumeSampleProvider volumeProvider;
+        ISampleProvider mixerInput;
         try
         {
             normalizedProvider = NormalizeForMixer(reader, currentMixer.WaveFormat.SampleRate);
             volumeProvider = new VolumeSampleProvider(normalizedProvider);
             volumeProvider.Volume = volume / 100f;
+            mixerInput = volumeProvider;
+            if (delaySamples > 0)
+            {
+                OffsetSampleProvider delayProvider = new OffsetSampleProvider(volumeProvider);
+                delayProvider.DelayBySamples = delaySamples;
+                mixerInput = delayProvider;
+            }
         }
         catch
         {
@@ -204,19 +229,19 @@ public class AudioPlaybackEngine : IDisposable
         }
         lock (activeReadersLock)
         {
-            activeReaders[volumeProvider] = reader;
+            activeReaders[mixerInput] = reader;
         }
         try
         {
-            currentMixer.AddMixerInput(volumeProvider);
+            currentMixer.AddMixerInput(mixerInput);
         }
         catch
         {
-            currentMixer.RemoveMixerInput(volumeProvider);
+            currentMixer.RemoveMixerInput(mixerInput);
             WaveStream? readerToDispose = null;
             lock (activeReadersLock)
             {
-                activeReaders.Remove(volumeProvider, out readerToDispose);
+                activeReaders.Remove(mixerInput, out readerToDispose);
             }
             if (readerToDispose != null)
             {
