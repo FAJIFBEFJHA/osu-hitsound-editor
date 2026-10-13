@@ -36,7 +36,7 @@ public class AudioPlaybackEngine : IDisposable
             currentMixer.ReadFully = true;
             device.Init(currentMixer);
             outputDevice = device;
-            mixer =  currentMixer;
+            mixer = currentMixer;
         }
         catch
         {
@@ -244,6 +244,101 @@ public class AudioPlaybackEngine : IDisposable
                 activeReaders.Remove(mixerInput, out readerToDispose);
             }
             if (readerToDispose != null)
+            {
+                readerToDispose.Dispose();
+            }
+            throw;
+        }
+    }
+    public void AddLoopingAudioSource(string filePath, double durationMilliseconds, int volume = 100, double delayMilliseconds = 0)
+    {
+        if (volume < 0 || volume > 100)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(volume),
+                volume,
+                "The volume must be between 0 and 100.");
+        }
+        if (!double.IsFinite(durationMilliseconds) || durationMilliseconds <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(durationMilliseconds),
+                durationMilliseconds,
+                "The loop duration must be finite and positive.");
+        }
+        if (!double.IsFinite(delayMilliseconds) || delayMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayMilliseconds),
+                delayMilliseconds,
+                "The audio delay must be finite and non-negative.");
+        }
+        if (mixer == null)
+        {
+            throw new InvalidOperationException(
+                "The audio output has not been initialized.");
+        }
+        MixingSampleProvider currentMixer = mixer;
+        double durationFrames = durationMilliseconds * currentMixer.WaveFormat.SampleRate / 1000;
+        if (durationFrames < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(durationMilliseconds),
+                durationMilliseconds,
+                "The loop duration must produce at least one audio frame.");
+        }
+        if (durationFrames > int.MaxValue / currentMixer.WaveFormat.Channels)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(durationMilliseconds),
+                durationMilliseconds,
+                "The loop duration exceeds the supported sample range.");
+        }
+        int takeSamples = (int)durationFrames * currentMixer.WaveFormat.Channels;
+        double delayFrames = delayMilliseconds * currentMixer.WaveFormat.SampleRate / 1000;
+        if (delayFrames > int.MaxValue / currentMixer.WaveFormat.Channels)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayMilliseconds),
+                delayMilliseconds,
+                "The audio delay exceeds the supported sample range.");
+        }
+        int delaySamples = (int)delayFrames * currentMixer.WaveFormat.Channels;
+        WaveStream reader = OpenAudioFile(filePath);
+        OffsetSampleProvider limitedProvider;
+        try
+        {
+            LoopingWaveStream loopReader = new LoopingWaveStream(reader);
+            ISampleProvider normalizedProvider = NormalizeForMixer(loopReader, currentMixer.WaveFormat.SampleRate);
+            VolumeSampleProvider volumeProvider = new VolumeSampleProvider(normalizedProvider);
+            volumeProvider.Volume = volume / 100f;
+            limitedProvider = new OffsetSampleProvider(volumeProvider);
+            limitedProvider.TakeSamples = takeSamples;
+            limitedProvider.DelayBySamples = delaySamples;
+        }
+        catch
+        {
+            reader.Dispose();
+            throw;
+        }
+        lock (activeReadersLock)
+        {
+            activeReaders[limitedProvider] = reader;
+        }
+        try
+        {
+            currentMixer.AddMixerInput(limitedProvider);
+        }
+        catch
+        {
+
+            currentMixer.RemoveMixerInput(limitedProvider);
+            WaveStream? readerToDispose = null;
+            lock (activeReadersLock)
+            {
+                activeReaders.Remove(limitedProvider, out readerToDispose);
+            }
+            if(readerToDispose != null)
             {
                 readerToDispose.Dispose();
             }

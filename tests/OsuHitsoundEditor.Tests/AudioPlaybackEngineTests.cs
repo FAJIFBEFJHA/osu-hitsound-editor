@@ -645,4 +645,319 @@ public class AudioPlaybackEngineTests
         }
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(101)]
+    public void AddLoopingAudioSource_WhenVolumeIsInvalid_ThrowsArgumentOutOfRangeException(
+        int volume)
+    {
+        using AudioPlaybackEngine engine = new();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                engine.AddLoopingAudioSource("audio.wav", 100, volume));
+
+        Assert.Equal("volume", exception.ParamName);
+        Assert.Equal(volume, exception.ActualValue);
+    }
+
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(0.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void AddLoopingAudioSource_WhenDurationIsInvalid_ThrowsArgumentOutOfRangeException(
+        double durationMilliseconds)
+    {
+        using AudioPlaybackEngine engine = new();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                engine.AddLoopingAudioSource("audio.wav", durationMilliseconds));
+
+        Assert.Equal("durationMilliseconds", exception.ParamName);
+        Assert.Contains(
+            "The loop duration must be finite and positive.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void AddLoopingAudioSource_WhenDelayIsInvalid_ThrowsArgumentOutOfRangeException(
+        double delayMilliseconds)
+    {
+        using AudioPlaybackEngine engine = new();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                engine.AddLoopingAudioSource(
+                    "audio.wav", 100, 100, delayMilliseconds));
+
+        Assert.Equal("delayMilliseconds", exception.ParamName);
+        Assert.Contains(
+            "The audio delay must be finite and non-negative.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void AddLoopingAudioSource_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
+    {
+        using AudioPlaybackEngine engine = new();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                engine.AddLoopingAudioSource("audio.wav", 100));
+
+        Assert.Equal(
+            "The audio output has not been initialized.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0.001, "The loop duration must produce at least one audio frame.")]
+    [InlineData(double.MaxValue, "The loop duration exceeds the supported sample range.")]
+    public void AddLoopingAudioSource_WhenDurationCannotBeRepresented_ThrowsBeforeOpeningFile(
+        double durationMilliseconds,
+        string expectedMessage)
+    {
+        using AudioPlaybackEngine engine = new();
+
+        MixingSampleProvider mixer = new(
+            WaveFormat.CreateIeeeFloatWaveFormat(44100, 2));
+
+        FieldInfo? mixerField = typeof(AudioPlaybackEngine).GetField(
+            "mixer",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(mixerField);
+        mixerField.SetValue(engine, mixer);
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                engine.AddLoopingAudioSource(
+                    "nonexistent-audio.wav",
+                    durationMilliseconds));
+
+        Assert.Equal("durationMilliseconds", exception.ParamName);
+        Assert.Contains(expectedMessage, exception.Message);
+    }
+
+    [Fact]
+    public void AddLoopingAudioSource_WhenDelayExceedsSupportedRange_ThrowsBeforeOpeningFile()
+    {
+        using AudioPlaybackEngine engine = new();
+
+        MixingSampleProvider mixer = new(
+            WaveFormat.CreateIeeeFloatWaveFormat(44100, 2));
+
+        FieldInfo? mixerField = typeof(AudioPlaybackEngine).GetField(
+            "mixer",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(mixerField);
+        mixerField.SetValue(engine, mixer);
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                engine.AddLoopingAudioSource(
+                    "nonexistent-audio.wav",
+                    durationMilliseconds: 100,
+                    delayMilliseconds: double.MaxValue));
+
+        Assert.Equal("delayMilliseconds", exception.ParamName);
+        Assert.Contains(
+            "The audio delay exceeds the supported sample range.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0.0, 0)]
+    [InlineData(1.0, 44)]
+    public void AddLoopingAudioSource_WhenDurationEnds_MixesAndReleasesReader(
+        double delayMilliseconds,
+        int expectedDelayFrames)
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid()}.wav");
+
+        WaveFormat format = new(44100, 16, 1);
+
+        using (WaveFileWriter writer = new(path, format))
+        {
+            byte[] audio = { 0, 64, 0, 32 };
+            writer.Write(audio, 0, audio.Length);
+        }
+
+        try
+        {
+            using AudioPlaybackEngine engine = new();
+
+            MixingSampleProvider mixer = new(
+                WaveFormat.CreateIeeeFloatWaveFormat(44100, 2))
+            {
+                ReadFully = true
+            };
+
+            FieldInfo? mixerField = typeof(AudioPlaybackEngine).GetField(
+                "mixer",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.NotNull(mixerField);
+            mixerField.SetValue(engine, mixer);
+
+            MethodInfo? handlerMethod = typeof(AudioPlaybackEngine).GetMethod(
+                "OnMixerInputEnded",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.NotNull(handlerMethod);
+
+            EventHandler<SampleProviderEventArgs> handler =
+                (EventHandler<SampleProviderEventArgs>)Delegate.CreateDelegate(
+                    typeof(EventHandler<SampleProviderEventArgs>),
+                    engine,
+                    handlerMethod);
+
+            mixer.MixerInputEnded += handler;
+
+            FieldInfo? readersField = typeof(AudioPlaybackEngine).GetField(
+                "activeReaders",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.NotNull(readersField);
+
+            Dictionary<ISampleProvider, WaveStream> activeReaders =
+                Assert.IsType<Dictionary<ISampleProvider, WaveStream>>(
+                    readersField.GetValue(engine));
+
+            engine.AddLoopingAudioSource(
+                path,
+                durationMilliseconds: 2,
+                volume: 50,
+                delayMilliseconds: delayMilliseconds);
+
+            Assert.Single(activeReaders);
+
+            // 2 ms at 44100 Hz becomes 88 complete frames.
+            int durationFrames = 88;
+            int totalFrames = expectedDelayFrames + durationFrames + 2;
+
+            float[] output = new float[totalFrames * 2];
+            int samplesRead = mixer.Read(output.AsSpan());
+
+            Assert.Equal(output.Length, samplesRead);
+
+            if (expectedDelayFrames > 0)
+            {
+                Assert.Equal(0f, output[0]);
+                Assert.Equal(
+                    0f,
+                    output[(expectedDelayFrames - 1) * 2]);
+            }
+
+            // Two-frame source: 0.5, 0.25.
+            // At 50% volume: 0.25, 0.125.
+            int firstFrame = expectedDelayFrames;
+
+            Assert.InRange(
+                output[firstFrame * 2],
+                0.24f,
+                0.26f);
+
+            Assert.InRange(
+                output[(firstFrame + 1) * 2],
+                0.12f,
+                0.13f);
+
+            // Verify repetition and stereo normalization.
+            Assert.InRange(
+                output[(firstFrame + 2) * 2],
+                0.24f,
+                0.26f);
+
+            Assert.Equal(
+                output[firstFrame * 2],
+                output[firstFrame * 2 + 1]);
+
+            // The last permitted frame still contains audio.
+            Assert.InRange(
+                output[(firstFrame + 87) * 2],
+                0.12f,
+                0.13f);
+
+            // Audio ends at the requested frame boundary.
+            Assert.Equal(
+                0f,
+                output[(firstFrame + 88) * 2]);
+
+            // Ensure the mixer observes end-of-input.
+            mixer.Read(new float[2].AsSpan());
+
+            Assert.Empty(activeReaders);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void AddLoopingAudioSource_WhenEngineIsDisposed_ReleasesActiveReader()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid()}.wav");
+
+        WaveFormat format = new(44100, 16, 1);
+
+        using (WaveFileWriter writer = new(path, format))
+        {
+            byte[] audio = { 0, 64, 0, 32 };
+            writer.Write(audio, 0, audio.Length);
+        }
+
+        try
+        {
+            using AudioPlaybackEngine engine = new();
+
+            MixingSampleProvider mixer = new(
+                WaveFormat.CreateIeeeFloatWaveFormat(44100, 2));
+
+            FieldInfo? mixerField = typeof(AudioPlaybackEngine).GetField(
+                "mixer",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.NotNull(mixerField);
+            mixerField.SetValue(engine, mixer);
+
+            FieldInfo? readersField = typeof(AudioPlaybackEngine).GetField(
+                "activeReaders",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.NotNull(readersField);
+
+            Dictionary<ISampleProvider, WaveStream> activeReaders =
+                Assert.IsType<Dictionary<ISampleProvider, WaveStream>>(
+                    readersField.GetValue(engine));
+
+            engine.AddLoopingAudioSource(
+                path,
+                durationMilliseconds: 1000);
+
+            Assert.Single(activeReaders);
+
+            engine.Dispose();
+
+            Assert.Empty(activeReaders);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
 }

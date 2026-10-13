@@ -12,15 +12,15 @@ Its purpose is to provide a visual reference for how `.osu` data is parsed, how 
 
 Parsing, logical hitsound resolution, and the current physical sample-resolution boundary are complete. The project is in **Audio Infrastructure**.
 
-Verified checkpoint (2026-10-12):
+Verified checkpoint (2026-10-13):
 
 ```text
-605/605 automated tests passing (full suite)
+646/646 automated tests passing (full suite)
 ```
 
 The audio engine supports decoding, normalized mixing, timeline seek, rendered-position reporting, and relative source delays through `OffsetSampleProvider`. `Beatmap` enumerates chronological discrete hitsound events, and `TimedHitSoundPlaybackCursor` tracks selection progress. `HitSoundPlaybackService` can dispatch events immediately or prequeue a bounded interval before playback using each event's time relative to the interval origin.
 
-Prequeueing is verified against mixer frames and timeline audio. It is **not** an active-playback, audio-clock-driven scheduler. Continuous slider-body audio, real-time scheduling, editor UI, export, and optimization remain future work.
+Prequeueing is verified against mixer frames and timeline audio. It is **not** an active-playback, audio-clock-driven scheduler. Fixed-duration sample looping is verified as audio infrastructure, but slider-body integration, real-time scheduling, editor UI, export, and optimization remain future work.
 
 ---
 
@@ -57,7 +57,8 @@ The main responsibilities are currently:
 - `SliderEdge` stores hitsound information for the head, repeats, and tail of a slider.
 - `HitSoundLayer` represents one logical sound layer after inheritance and timing rules have been resolved.
 - `SampleResolver` maps logical layers to physical beatmap samples or explicit missing/fallback outcomes.
-- `AudioPlaybackEngine` owns the output device, timeline source, mixer, and transient audio-reader lifetimes.
+- `AudioPlaybackEngine` owns the output device, timeline source, mixer, and transient audio-reader lifetimes, including finite looping sources.
+- `LoopingWaveStream` repeats reads by rewinding a seekable `WaveStream`; it does not own or dispose the underlying reader.
 - `HitSoundPlaybackService` resolves hitsound layers and dispatches `HitCircle`, `SliderEdge`, and `SliderTick` playback immediately.
 - `TimedHitSoundEvent` stores an event time, `HitObject`, `HitSoundEventType`, and optional `EdgeIndex`.
 - `HitCirclePlaybackCursor` tracks hit-circle event progress and can reset its position after seeking.
@@ -527,6 +528,8 @@ SliderWhistle
 
 `Finish` and `Clap` are not treated as continuous slider-body sounds.
 
+Finite sample looping is now available through `AudioPlaybackEngine.AddLoopingAudioSource(...)` using `LoopingWaveStream`, normalized sample providers, volume, and an `OffsetSampleProvider` duration limit. This infrastructure has not yet been connected to slider-body event playback.
+
 ---
 
 ## Slider Ticks
@@ -703,7 +706,7 @@ The project uses **xUnit** for automated testing.
 Current checkpoint:
 
 ```text
-605/605 tests passing (full suite, 2026-10-12)
+646/646 tests passing (full suite, 2026-10-13)
 ```
 
 The test suite currently covers:
@@ -743,6 +746,7 @@ hit-circle cursor advancement and seeking
 chronological TimedHitSoundEvent generation and playback dispatch
 unified TimedHitSoundPlaybackCursor advancement/seek
 relative delayed playback and mixer-reader cleanup
+finite looping sample playback, duration cutoff, volume, delays, and reader cleanup
 prequeued interval playback, inclusive boundaries, and overlapping hitsounds
 shared-origin mixing of prequeued hitsounds with timeline audio
 ```
@@ -785,7 +789,7 @@ Deferred until needed: defining a stable logical `SampleId` and loading addition
 
 Implemented: NAudio decoding, output/mixer lifetime, timeline playback and seek, per-source volume, chronological event selection with `TimedHitSoundPlaybackCursor`, relative delayed sample playback, and bounded prequeueing before the mixer advances. Focused real-device checks covered pause/resume, seek/requeue, and stop/requeue.
 
-Remaining: accurate scheduling while playback is active, continuous slider-body audio, playback-controller coordination, editor-timeline integration, and runtime device-error recovery. NAudio is the selected external audio infrastructure.
+Remaining: connecting finite looping to logical slider-body layers, accurate scheduling while playback is active, playback-controller coordination, editor-timeline integration, and runtime device-error recovery. NAudio is the selected external audio infrastructure.
 
 ### Desktop Editor and Timeline
 

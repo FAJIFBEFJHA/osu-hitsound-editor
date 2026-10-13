@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **605/605 tests passing** (full suite, 2026-10-12)
+Current full-suite checkpoint: **646/646 tests passing** (full suite, 2026-10-13)
 
 Selected infrastructure:
 
@@ -216,10 +216,14 @@ Discrete hitsound playback and event selection completed:
 - [x] Verify delayed mixing, sample lifetime, overlapping events, and alignment with timeline audio using hardware-independent tests
 - [x] Verify WASAPI pause/resume, pause-seek-requeue-play, and stop/requeue sequences in focused temporary integration tests
 - [x] Verify all permanent behavior with the complete 605-test suite (2026-10-12)
+- [x] Implement `LoopingWaveStream` for hardware-independent sample repetition with non-owning reader semantics
+- [x] Verify finite looping with `OffsetSampleProvider.TakeSamples`, including normalized stereo audio
+- [x] Implement `AudioPlaybackEngine.AddLoopingAudioSource(...)` with duration, volume, optional delay, and reader cleanup
+- [x] Add 41 looping and duration tests; verify the complete 646-test suite (2026-10-13)
 
 Next:
 
-- [ ] Design and test fixed-duration looping of slider-body samples (`SliderSlide` / `SliderWhistle`) before connecting it to the slider body
+- [ ] Connect finite looping playback to slider-body `SliderSlide` / `SliderWhistle` using each slider's actual duration
 - [ ] Design accurate audio-clock scheduling during active playback; prequeueing before the mixer advances is not a real-time scheduler
 - [ ] Coordinate seek, pause, stop, and queue reconstruction in the eventual playback controller
 - [ ] Connect the rendered-position timeline clock to the eventual editor timeline/UI
