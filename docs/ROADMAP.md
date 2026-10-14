@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **646/646 tests passing** (full suite, 2026-10-13)
+Current full-suite checkpoint: **669/669 tests passing** (full suite, 2026-10-14)
 
 Selected infrastructure:
 
@@ -220,14 +220,26 @@ Discrete hitsound playback and event selection completed:
 - [x] Verify finite looping with `OffsetSampleProvider.TakeSamples`, including normalized stereo audio
 - [x] Implement `AudioPlaybackEngine.AddLoopingAudioSource(...)` with duration, volume, optional delay, and reader cleanup
 - [x] Add 41 looping and duration tests; verify the complete 646-test suite (2026-10-13)
+- [x] Add `HitSoundPlaybackService.PlaySliderBody(...)` to resolve `SliderSlide` and optional `SliderWhistle` layers and queue finite looping sources for `Beatmap.GetSliderDuration(slider)`
+- [x] Preserve missing-custom / external-fallback outcomes for slider-body layers without attempting to play unavailable files
+- [x] Schedule slider-body layers when `QueueTimedHitSoundEventsInRange(...)` encounters the slider-head event (`SliderEdge`, `EdgeIndex = 0`), with the same relative delay as the head; do not restart the body at repeat or tail events
+- [x] Cover slider-body duration, optional whistle, delay, sample resolution, invalid inputs, and queued head/body mixing with hardware-independent tests
+- [x] Verify the complete 669-test suite (2026-10-14) via `New-SessionReview.ps1`
 
 Next:
 
-- [ ] Connect finite looping playback to slider-body `SliderSlide` / `SliderWhistle` using each slider's actual duration
+- [ ] Define and verify how to reconstruct a slider body when playback starts or seeks **inside** an already-running slider; head-triggered interval prequeueing alone does not cover that case
 - [ ] Design accurate audio-clock scheduling during active playback; prequeueing before the mixer advances is not a real-time scheduler
 - [ ] Coordinate seek, pause, stop, and queue reconstruction in the eventual playback controller
 - [ ] Connect the rendered-position timeline clock to the eventual editor timeline/UI
 - [ ] Handle device errors and runtime recovery beyond partial-initialization cleanup
+
+Deferred maintenance candidates (review only when relevant; not blocking current work):
+
+- [ ] Evaluate whether `HitCirclePlaybackCursor` and hit-circle-only pending playback remain necessary alongside the unified timed-event cursor
+- [ ] Check the actual callers of circle/edge/tick time-range playback helpers before consolidating overlapping responsibilities
+- [ ] Reassess duplicated standard/body/tick sample lookup construction only when a concrete change justifies it
+- [ ] Revisit common validation and reader-lifetime code in `AddAudioSource(...)` / `AddLoopingAudioSource(...)` without merging their distinct playback contracts prematurely
 
 Do not copy the removed diagnostic spike into `src/`. Production methods are re-derived and written by the author through the normal learning workflow.
 

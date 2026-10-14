@@ -12,15 +12,15 @@ Its purpose is to provide a visual reference for how `.osu` data is parsed, how 
 
 Parsing, logical hitsound resolution, and the current physical sample-resolution boundary are complete. The project is in **Audio Infrastructure**.
 
-Verified checkpoint (2026-10-13):
+Verified checkpoint (2026-10-14):
 
 ```text
-646/646 automated tests passing (full suite)
+669/669 automated tests passing (full suite)
 ```
 
-The audio engine supports decoding, normalized mixing, timeline seek, rendered-position reporting, and relative source delays through `OffsetSampleProvider`. `Beatmap` enumerates chronological discrete hitsound events, and `TimedHitSoundPlaybackCursor` tracks selection progress. `HitSoundPlaybackService` can dispatch events immediately or prequeue a bounded interval before playback using each event's time relative to the interval origin.
+The audio engine supports decoding, normalized mixing, timeline seek, rendered-position reporting, and relative source delays through `OffsetSampleProvider`. `Beatmap` enumerates chronological discrete hitsound events, and `TimedHitSoundPlaybackCursor` tracks selection progress. `HitSoundPlaybackService` can dispatch discrete events immediately or prequeue a bounded interval before playback using each event's time relative to the interval origin. The prequeue path also starts finite looping slider-body layers at the slider head, using the slider's full duration.
 
-Prequeueing is verified against mixer frames and timeline audio. It is **not** an active-playback, audio-clock-driven scheduler. Fixed-duration sample looping is verified as audio infrastructure, but slider-body integration, real-time scheduling, editor UI, export, and optimization remain future work.
+Prequeueing is verified against mixer frames and timeline audio. It is **not** an active-playback, audio-clock-driven scheduler. Starting or seeking inside a slider body still requires explicit playback-state reconstruction; real-time scheduling, editor UI, export, and optimization remain future work.
 
 ---
 
@@ -59,9 +59,10 @@ The main responsibilities are currently:
 - `SampleResolver` maps logical layers to physical beatmap samples or explicit missing/fallback outcomes.
 - `AudioPlaybackEngine` owns the output device, timeline source, mixer, and transient audio-reader lifetimes, including finite looping sources.
 - `LoopingWaveStream` repeats reads by rewinding a seekable `WaveStream`; it does not own or dispose the underlying reader.
-- `HitSoundPlaybackService` resolves hitsound layers and dispatches `HitCircle`, `SliderEdge`, and `SliderTick` playback immediately.
+- `HitSoundPlaybackService` dispatches discrete hitsound layers and resolves/queues continuous slider-body layers through `PlaySliderBody(...)`; the bounded prequeue path starts the body with its slider-head event.
 - `TimedHitSoundEvent` stores an event time, `HitObject`, `HitSoundEventType`, and optional `EdgeIndex`.
-- `HitCirclePlaybackCursor` tracks hit-circle event progress and can reset its position after seeking.
+- `TimedHitSoundPlaybackCursor` tracks discrete event progress and can reset its position after seeking.
+- `HitCirclePlaybackCursor` separately tracks hit-circle event progress and can reset its position after seeking.
 
 Parsing, logical resolution, physical sample lookup, event selection, and audio output remain separate:
 
@@ -528,7 +529,9 @@ SliderWhistle
 
 `Finish` and `Clap` are not treated as continuous slider-body sounds.
 
-Finite sample looping is now available through `AudioPlaybackEngine.AddLoopingAudioSource(...)` using `LoopingWaveStream`, normalized sample providers, volume, and an `OffsetSampleProvider` duration limit. This infrastructure has not yet been connected to slider-body event playback.
+`HitSoundPlaybackService.PlaySliderBody(...)` obtains the slider's total duration from `Beatmap.GetSliderDuration(slider)` and its logical body layers from `GetSliderBodyHitSoundLayers(slider)`. Each layer is resolved through `SampleResolver`; an available local file is passed to `AudioPlaybackEngine.AddLoopingAudioSource(...)` with that duration, the layer volume, and an optional relative delay. Missing custom samples and external fallbacks are returned as resolution outcomes, not sent to the mixer. Invalid slider state or duration is rejected.
+
+`AddLoopingAudioSource(...)` uses `LoopingWaveStream`, normalized sample providers, volume, and an `OffsetSampleProvider` duration limit. The audio engine owns the playback readers; the looping wrapper does not dispose its underlying reader. In the bounded prequeue path, the body is started only when the slider-head event is included; repeat/tail events do not restart it.
 
 ---
 
@@ -669,13 +672,13 @@ flowchart TD
     C -. future .-> S[Export / optimization]
 ```
 
-The audio path can dispatch selected hitsounds immediately or prequeue discrete events before the mixer starts consuming audio. Prequeueing converts each absolute event time into a delay relative to one common interval start. The dashed branches indicate future active-playback scheduling, editor, export, and optimization functionality.
+The audio path can dispatch selected discrete hitsounds immediately or prequeue discrete events together with slider-body playback triggered at included slider heads, before the mixer starts consuming audio. Prequeueing converts each absolute event time into a delay relative to one common interval start. The dashed branches indicate future active-playback scheduling, editor, export, and optimization functionality.
 
 ---
 
 ## Current Architectural Boundary
 
-The current implementation reaches discrete hitsound playback and prequeueing without implementing an editor timeline or active-playback time-accurate scheduler.
+The current implementation reaches discrete hitsound playback, finite slider-body playback, and bounded prequeueing without implementing an editor timeline or active-playback time-accurate scheduler.
 
 Implemented:
 
@@ -687,15 +690,16 @@ Beatmap -> GetTimedHitSoundEventsInRange(...) -> timed discrete events
 TimedHitSoundEvent -> PlayTimedHitSoundEvent(...) -> immediate dispatch or optional delay
 TimedHitSoundPlaybackCursor -> AdvanceTo(...) / SeekTo(...) -> event selection progress
 QueueTimedHitSoundEventsInRange(...) -> per-event relative delay -> prequeued mixer inputs
+Slider-head event (EdgeIndex = 0) -> PlaySliderBody(...) -> finite looping mixer inputs
 ```
 
 `AudioPlaybackEngine.AddAudioSource(...)` accepts an optional finite, non-negative `delayMilliseconds`; `OffsetSampleProvider` inserts initial silence in whole mixer frames. The mixer-input provider is also the key used to release its underlying reader when playback ends.
 
-`QueueTimedHitSoundEventsInRange(...)` selects a chronological interval and computes `event.Time - startMilliseconds`. By default the interval is `(start, end]`, except that a start at zero includes events at zero. An optional `includeStart` includes an event at a positive start boundary, supporting post-seek reconstruction. Sources must be queued **before** the mixer advances through the interval; adding them after playback has progressed does not retrospectively align their timestamps.
+`QueueTimedHitSoundEventsInRange(...)` selects a chronological interval and computes `event.Time - startMilliseconds`. By default the interval is `(start, end]`, except that a start at zero includes events at zero. An optional `includeStart` includes an event at a positive start boundary, supporting post-seek reconstruction. When an included event is a slider head (`SliderEdge`, `EdgeIndex = 0`), the queue also calls `PlaySliderBody(...)` with the same delay and appends its resolution results to those of the head. Repeats and tails remain discrete-only events. Sources must be queued **before** the mixer advances through the interval; adding them after playback has progressed does not retrospectively align their timestamps. Head-triggered prequeueing does not reconstruct the remaining body when an interval begins midway through a slider.
 
 Focused device tests confirmed pause/resume, pause-seek-requeue-play, and stop/requeue with a loaded timeline. These are integration checks, not permanent device-dependent suite tests. Current `Stop()` has a separate limitation when no timeline audio is loaded.
 
-Not implemented yet: accurate scheduling while audio is actively advancing, continuous slider-body playback, editor timeline/UI, deterministic export/reload/equivalence verification, and sample optimization.
+Not implemented yet: reconstructing an already-running slider body after an in-slider seek, accurate scheduling while audio is actively advancing, editor timeline/UI, deterministic export/reload/equivalence verification, and sample optimization.
 
 ---
 
@@ -706,7 +710,7 @@ The project uses **xUnit** for automated testing.
 Current checkpoint:
 
 ```text
-646/646 tests passing (full suite, 2026-10-13)
+669/669 tests passing (full suite, 2026-10-14)
 ```
 
 The test suite currently covers:
@@ -749,6 +753,7 @@ relative delayed playback and mixer-reader cleanup
 finite looping sample playback, duration cutoff, volume, delays, and reader cleanup
 prequeued interval playback, inclusive boundaries, and overlapping hitsounds
 shared-origin mixing of prequeued hitsounds with timeline audio
+finite slider-body playback, head/body delay alignment, whistle mixing and missing-sample outcomes
 ```
 
 The tests are located under:
@@ -787,9 +792,9 @@ Deferred until needed: defining a stable logical `SampleId` and loading addition
 
 ### Audio Infrastructure
 
-Implemented: NAudio decoding, output/mixer lifetime, timeline playback and seek, per-source volume, chronological event selection with `TimedHitSoundPlaybackCursor`, relative delayed sample playback, and bounded prequeueing before the mixer advances. Focused real-device checks covered pause/resume, seek/requeue, and stop/requeue.
+Implemented: NAudio decoding, output/mixer lifetime, timeline playback and seek, per-source volume, chronological event selection with `TimedHitSoundPlaybackCursor`, relative delayed sample playback, slider-body layers with finite looping, and bounded prequeueing before the mixer advances. Focused real-device checks covered pause/resume, seek/requeue, and stop/requeue.
 
-Remaining: connecting finite looping to logical slider-body layers, accurate scheduling while playback is active, playback-controller coordination, editor-timeline integration, and runtime device-error recovery. NAudio is the selected external audio infrastructure.
+Remaining: restoring slider-body playback state when seeking/starting inside a slider, accurate scheduling while playback is active, playback-controller coordination, editor-timeline integration, and runtime device-error recovery. NAudio is the selected external audio infrastructure.
 
 ### Desktop Editor and Timeline
 

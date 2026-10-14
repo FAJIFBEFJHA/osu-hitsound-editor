@@ -6639,4 +6639,657 @@ public class HitSoundPlaybackServiceTests
             Directory.Delete(directory, true);
         }
     }
+    [Fact]
+    public void QueueTimedHitSoundEventsInRange_SliderHead_SchedulesBodyWithSameDelay()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string headPath = Path.Combine(directory, "normal-hitnormal.wav");
+            string bodyPath = Path.Combine(directory, "normal-sliderslide.wav");
+
+            WriteHalfAmplitudeWav(headPath);
+            WriteHalfAmplitudeWav(bodyPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.SliderTickRate = 1;
+            beatmap.HitObjects.Add(slider);
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            mixer.ReadFully = true;
+
+            var queuedEvents = service.QueueTimedHitSoundEventsInRange(
+                beatmap, 900, 1100, directory, resolver, engine);
+
+            var queued = Assert.Single(queuedEvents);
+
+            Assert.Equal(HitSoundEventType.SliderEdge, queued.Event.EventType);
+            Assert.Equal(0, queued.Event.EdgeIndex);
+            Assert.Equal(1000, queued.Event.Time);
+
+            Assert.Equal(2, queued.Results.Count);
+            Assert.Equal(headPath, queued.Results[0].ResolvedPath);
+            Assert.Equal(bodyPath, queued.Results[1].ResolvedPath);
+
+            Assert.All(queued.Results, result =>
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome));
+
+            Assert.Equal(1000d, beatmap.GetSliderDuration(slider));
+
+            const int delayFrames = 4410;
+            const int headFrames = 100;
+            const int bodyFrames = 44100;
+            const int endFrame = delayFrames + bodyFrames;
+
+            float[] output = new float[(endFrame + 1) * 2];
+            Assert.Equal(output.Length, mixer.Read(output.AsSpan()));
+
+            static void AssertFrame(float[] samples, int frame, float expected)
+            {
+                Assert.InRange(
+                    samples[frame * 2],
+                    expected - 0.01f,
+                    expected + 0.01f);
+
+                Assert.InRange(
+                    samples[frame * 2 + 1],
+                    expected - 0.01f,
+                    expected + 0.01f);
+            }
+
+            AssertFrame(output, 0, 0f);
+            AssertFrame(output, delayFrames - 1, 0f);
+
+            // Head and body start together.
+            AssertFrame(output, delayFrames, 0.50f);
+            AssertFrame(output, delayFrames + headFrames - 1, 0.50f);
+
+            // The head ends, but the body continues.
+            AssertFrame(output, delayFrames + headFrames, 0.25f);
+            AssertFrame(output, endFrame - 1, 0.25f);
+
+            // The body finishes after the full slider duration.
+            AssertFrame(output, endFrame, 0f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void QueueTimedHitSoundEventsInRange_SliderWithWhistle_QueuesBothBodyLayers()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string headPath = Path.Combine(directory, "normal-hitnormal.wav");
+            string slidePath = Path.Combine(directory, "normal-sliderslide.wav");
+            string whistlePath = Path.Combine(directory, "soft-sliderwhistle.wav");
+
+            WriteHalfAmplitudeWav(headPath);
+            WriteHalfAmplitudeWav(slidePath);
+            WriteHalfAmplitudeWav(whistlePath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.SliderTickRate = 1;
+            slider.HitSound = 2;
+            slider.HitSample.AdditionSet = 2;
+            beatmap.HitObjects.Add(slider);
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            var queued = Assert.Single(
+                service.QueueTimedHitSoundEventsInRange(
+                    beatmap, 1000, 1000, directory, resolver, engine,
+                    includeStart: true));
+
+            Assert.Equal(3, queued.Results.Count);
+
+            Assert.Equal(headPath, queued.Results[0].ResolvedPath);
+            Assert.Equal(slidePath, queued.Results[1].ResolvedPath);
+            Assert.Equal(whistlePath, queued.Results[2].ResolvedPath);
+
+            Assert.All(queued.Results, result =>
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome));
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Head + slide + whistle, each at 50% volume.
+            Assert.InRange(output[0], 0.74f, 0.76f);
+            Assert.InRange(output[1], 0.74f, 0.76f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void QueueTimedHitSoundEventsInRange_MissingBody_PreservesHeadAndFallback()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string headPath = Path.Combine(directory, "normal-hitnormal.wav");
+            WriteHalfAmplitudeWav(headPath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.SliderTickRate = 1;
+            beatmap.HitObjects.Add(slider);
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            var queued = Assert.Single(
+                service.QueueTimedHitSoundEventsInRange(
+                    beatmap, 1000, 1000, directory,
+                    resolver, engine, includeStart: true));
+
+            Assert.Equal(2, queued.Results.Count);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                queued.Results[0].Outcome);
+            Assert.Equal(headPath, queued.Results[0].ResolvedPath);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                queued.Results[1].Outcome);
+            Assert.Null(queued.Results[1].ResolvedPath);
+            Assert.Equal(
+                "normal-sliderslide.wav",
+                queued.Results[1].FallbackFilename);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void QueueTimedHitSoundEventsInRange_RepeatAndTail_DoNotQueueSliderBody()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.SliderTickRate = 1;
+            beatmap.HitObjects.Add(slider);
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            // No mixer: missing samples must not attempt playback.
+            using var engine = new AudioPlaybackEngine();
+
+            var queuedEvents = service.QueueTimedHitSoundEventsInRange(
+                beatmap, 1000, 2000, directory, resolver, engine);
+
+            Assert.Equal(2, queuedEvents.Count);
+
+            Assert.Equal(1, queuedEvents[0].Event.EdgeIndex);
+            Assert.Equal(1500, queuedEvents[0].Event.Time);
+            Assert.Equal(2, queuedEvents[0].Results.Count);
+
+            Assert.Equal(2, queuedEvents[1].Event.EdgeIndex);
+            Assert.Equal(2000, queuedEvents[1].Event.Time);
+            Assert.Single(queuedEvents[1].Results);
+
+            Assert.All(queuedEvents, queued =>
+                Assert.All(queued.Results, result =>
+                    Assert.Equal(
+                        SampleResolutionOutcome.ExternalFallbackRequired,
+                        result.Outcome)));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 1)]
+    public void QueueTimedHitSoundEventsInRange_SliderAtStart_RespectsIncludeStart(
+        bool includeStart,
+        int expectedCount)
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.SliderTickRate = 1;
+            beatmap.HitObjects.Add(slider);
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = new AudioPlaybackEngine();
+
+            var queuedEvents = service.QueueTimedHitSoundEventsInRange(
+                beatmap, 1000, 1000, directory,
+                resolver, engine, includeStart);
+
+            Assert.Equal(expectedCount, queuedEvents.Count);
+
+            if (!includeStart)
+            {
+                Assert.Empty(queuedEvents);
+                return;
+            }
+
+            var queued = Assert.Single(queuedEvents);
+
+            Assert.Equal(0, queued.Event.EdgeIndex);
+            Assert.Equal(1000, queued.Event.Time);
+            Assert.Equal(2, queued.Results.Count);
+
+            Assert.All(queued.Results, result =>
+                Assert.Equal(
+                    SampleResolutionOutcome.ExternalFallbackRequired,
+                    result.Outcome));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+    [Fact]
+    public void PlaySliderBody_WithoutWhistle_LoopsForTotalSliderDuration()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(directory, "normal-sliderslide.wav");
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            mixer.ReadFully = true;
+
+            List<SampleResolutionResult> results = service.PlaySliderBody(
+                beatmap, slider, directory, resolver, engine);
+
+            SampleResolutionResult result = Assert.Single(results);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+            Assert.Equal(path, result.ResolvedPath);
+            Assert.Equal(1000d, beatmap.GetSliderDuration(slider));
+
+            const int durationFrames = 44100;
+            float[] output = new float[(durationFrames + 1) * 2];
+
+            Assert.Equal(output.Length, mixer.Read(output.AsSpan()));
+
+            foreach (int frame in new[] { 0, 100, durationFrames - 1 })
+            {
+                Assert.InRange(output[frame * 2], 0.24f, 0.26f);
+                Assert.InRange(output[frame * 2 + 1], 0.24f, 0.26f);
+            }
+
+            Assert.Equal(0f, output[durationFrames * 2]);
+            Assert.Equal(0f, output[durationFrames * 2 + 1]);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderBody_WithWhistle_MixesBothBodyLayers()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string slidePath = Path.Combine(
+                directory, "normal-sliderslide.wav");
+            string whistlePath = Path.Combine(
+                directory, "soft-sliderwhistle.wav");
+
+            WriteHalfAmplitudeWav(slidePath);
+            WriteHalfAmplitudeWav(whistlePath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            slider.HitSound = 2;
+            slider.HitSample.AdditionSet = 2;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results = service.PlaySliderBody(
+                beatmap, slider, directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+            Assert.Equal(slidePath, results[0].ResolvedPath);
+            Assert.Equal(whistlePath, results[1].ResolvedPath);
+
+            Assert.All(results, result =>
+                Assert.Equal(
+                    SampleResolutionOutcome.BeatmapSampleFound,
+                    result.Outcome));
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            // Two 0.5-amplitude samples, each at 50% volume.
+            Assert.InRange(output[0], 0.49f, 0.51f);
+            Assert.InRange(output[1], 0.49f, 0.51f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderBody_WhenWhistleMissing_PlaysSlideAndReturnsFallback()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string slidePath = Path.Combine(
+                directory, "normal-sliderslide.wav");
+
+            WriteHalfAmplitudeWav(slidePath);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            slider.HitSound = 2;
+            slider.HitSample.AdditionSet = 2;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            List<SampleResolutionResult> results = service.PlaySliderBody(
+                beatmap, slider, directory, resolver, engine);
+
+            Assert.Equal(2, results.Count);
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                results[0].Outcome);
+            Assert.Equal(slidePath, results[0].ResolvedPath);
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                results[1].Outcome);
+            Assert.Null(results[1].ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderBody_WithDelay_StartsAndEndsAtExpectedFrames()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-sliderslide.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            mixer.ReadFully = true;
+
+            SampleResolutionResult result = Assert.Single(
+                service.PlaySliderBody(
+                    beatmap, slider, directory, resolver, engine,
+                    delayMilliseconds: 10));
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+
+            const int delayFrames = 441;
+            const int durationFrames = 44100;
+            const int endFrame = delayFrames + durationFrames;
+
+            float[] output = new float[(endFrame + 1) * 2];
+            Assert.Equal(output.Length, mixer.Read(output.AsSpan()));
+
+            Assert.Equal(0f, output[0]);
+            Assert.Equal(0f, output[(delayFrames - 1) * 2]);
+
+            Assert.InRange(output[delayFrames * 2], 0.24f, 0.26f);
+            Assert.InRange(output[(endFrame - 1) * 2], 0.24f, 0.26f);
+
+            Assert.Equal(0f, output[endFrame * 2]);
+            Assert.Equal(0f, output[endFrame * 2 + 1]);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderBody_WhenSampleIndexIsZero_DoesNotUseBeatmapFile()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-sliderslide.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            beatmap.TimingPoints[0].SampleIndex = 0;
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            SampleResolutionResult result = Assert.Single(
+                service.PlaySliderBody(
+                    beatmap, slider, directory, resolver, engine));
+
+            Assert.Equal(
+                SampleResolutionOutcome.ExternalFallbackRequired,
+                result.Outcome);
+            Assert.Null(result.ResolvedPath);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void PlaySliderBody_WhenBankedSampleMissing_UsesUniversalSample()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(directory, "sliderslide.wav");
+            WriteHalfAmplitudeWav(path);
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            SampleResolutionResult result = Assert.Single(
+                service.PlaySliderBody(
+                    beatmap, slider, directory, resolver, engine));
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+            Assert.Equal(path, result.ResolvedPath);
+
+            float[] output = new float[2];
+            Assert.Equal(2, mixer.Read(output.AsSpan()));
+            Assert.InRange(output[0], 0.24f, 0.26f);
+            Assert.InRange(output[1], 0.24f, 0.26f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1d)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlaySliderBody_WhenDelayInvalid_ThrowsArgumentOutOfRangeException(
+        double delayMilliseconds)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderBody(
+                    beatmap, slider, Path.GetTempPath(),
+                    resolver, engine, delayMilliseconds));
+
+        Assert.Equal("delayMilliseconds", exception.ParamName);
+        Assert.Equal(delayMilliseconds, (double)exception.ActualValue!);
+    }
+
+    [Theory]
+    [InlineData(0d)]
+    [InlineData(-1d)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void PlaySliderBody_WhenDurationInvalid_ThrowsInvalidOperationException(
+        double sliderLength)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        slider.Length = sliderLength;
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                service.PlaySliderBody(
+                    beatmap, slider, Path.GetTempPath(),
+                    resolver, engine));
+
+        Assert.Equal(
+            "The slider body duration must be finite and greater than zero.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    public void PlaySliderBody_WhenObjectIsNotSlider_ThrowsArgumentException(
+        int objectType)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        slider.ObjectType = objectType;
+
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(() =>
+                service.PlaySliderBody(
+                    beatmap, slider, Path.GetTempPath(),
+                    resolver, engine));
+
+        Assert.Equal("slider", exception.ParamName);
+    }
+
+    [Fact]
+    public void PlaySliderBody_WhenSampleExistsButOutputIsNotInitialized_ThrowsInvalidOperationException()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            WriteHalfAmplitudeWav(
+                Path.Combine(directory, "normal-sliderslide.wav"));
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+            using var engine = new AudioPlaybackEngine();
+
+            InvalidOperationException exception =
+                Assert.Throws<InvalidOperationException>(() =>
+                    service.PlaySliderBody(
+                        beatmap, slider, directory, resolver, engine));
+
+            Assert.Equal(
+                "The audio output has not been initialized.",
+                exception.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
 }

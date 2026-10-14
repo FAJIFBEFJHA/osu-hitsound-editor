@@ -1,5 +1,3 @@
-using System.Windows.Forms;
-
 namespace OsuHitsoundEditor;
 
 public class HitSoundPlaybackService
@@ -133,6 +131,64 @@ public class HitSoundPlaybackService
             double edgeTime = edge.EdgeTime;
             List<SampleResolutionResult> edgeResults = PlaySliderEdge(beatmap, slider, edgeIndex, beatmapDirectory, resolver, engine);
             results.Add((edgeIndex, edgeTime, edgeResults));
+        }
+        return results;
+    }
+    public List<SampleResolutionResult> PlaySliderBody(Beatmap beatmap, HitObject slider, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, double delayMilliseconds = 0)
+    {
+        ArgumentNullException.ThrowIfNull(beatmap);
+        ArgumentNullException.ThrowIfNull(slider);
+        ArgumentNullException.ThrowIfNull(resolver);
+        ArgumentNullException.ThrowIfNull(engine);
+        if (string.IsNullOrWhiteSpace(beatmapDirectory))
+        {
+            throw new ArgumentException(
+                "The beatmap directory must not be empty.",
+                nameof(beatmapDirectory));
+        }
+        if (!slider.IsSlider)
+        {
+            throw new ArgumentException(
+                "The hit object must be a slider.",
+                nameof(slider));
+        }
+        if (!double.IsFinite(delayMilliseconds) || delayMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayMilliseconds),
+                delayMilliseconds,
+                "The audio delay must be finite and non-negative.");
+        }
+        double durationMilliseconds = beatmap.GetSliderDuration(slider);
+        if (!double.IsFinite(durationMilliseconds) || durationMilliseconds <= 0)
+        {
+            throw new InvalidOperationException(
+                "The slider body duration must be finite and greater than zero.");
+        }
+        List<HitSoundLayer> layers = beatmap.GetSliderBodyHitSoundLayers(slider);
+        List<SampleResolutionResult> results = new List<SampleResolutionResult>();
+        foreach (var layer in layers)
+        {
+            SampleResolutionResult result = resolver.ResolveSample(layer, beatmapDirectory);
+            if (result.Outcome == SampleResolutionOutcome.CustomSampleMissing || result.Outcome == SampleResolutionOutcome.ExternalFallbackRequired)
+            {
+                results.Add(result);
+                continue;
+            }
+            if (result.Outcome == SampleResolutionOutcome.BeatmapSampleFound || result.Outcome == SampleResolutionOutcome.CustomSampleFound)
+            {
+                if (result.ResolvedPath == null)
+                {
+                    throw new InvalidOperationException(
+                        "A successful sample resolution must include a playable file path.");
+                }
+
+                engine.AddLoopingAudioSource(result.ResolvedPath, durationMilliseconds, layer.Volume, delayMilliseconds);
+                results.Add(result);
+                continue;
+            }
+            throw new InvalidOperationException(
+                $"The sample resolution outcome '{result.Outcome}' is not supported for playback.");
         }
         return results;
     }
@@ -322,10 +378,15 @@ public class HitSoundPlaybackService
         }
         List<TimedHitSoundEvent> events = beatmap.GetTimedHitSoundEventsInRange(startExclusiveMilliseconds, endMilliseconds);
         List<(TimedHitSoundEvent Event, List<SampleResolutionResult> Results)> results = new List<(TimedHitSoundEvent Event, List<SampleResolutionResult> Result)>();
-        foreach(var soundEvent in events)
+        foreach (var soundEvent in events)
         {
             double delayMilliseconds = soundEvent.Time - startMilliseconds;
             List<SampleResolutionResult> eventResults = PlayTimedHitSoundEvent(soundEvent, beatmap, beatmapDirectory, resolver, engine, delayMilliseconds);
+            if (soundEvent.EventType == HitSoundEventType.SliderEdge && soundEvent.EdgeIndex == 0)
+            {
+                List<SampleResolutionResult> bodyResults = PlaySliderBody(beatmap, soundEvent.HitObject, beatmapDirectory, resolver, engine, delayMilliseconds);
+                eventResults.AddRange(bodyResults);
+            }
             results.Add((soundEvent, eventResults));
         }
         return results;
