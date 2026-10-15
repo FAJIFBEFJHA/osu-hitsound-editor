@@ -418,3 +418,15 @@ Dispose()
 Ordinary automated tests should remain hardware-independent where practical. Device-dependent WASAPI behavior is verified with focused manual/integration checks until a justified hardware test seam/environment exists.
 
 **Reason:** Existing decoder/normalization tests instantiate `AudioPlaybackEngine` without needing a physical audio endpoint, and GitHub Actions should not become dependent on local playback hardware merely because output support exists. Explicit initialization also makes the resource ownership and lifecycle boundary visible.
+
+---
+
+## D027 — Review architecture and refactor before starting WPF UI
+
+**Decision:** Keep the present incremental architecture throughout Audio Infrastructure. Before implementing the WPF editor, carry out a dedicated, bounded architecture review and make only justified refactors. The preferred direction is a **modular monolith** with clear **domain, application-coordination, and infrastructure** responsibilities and **MVVM for WPF presentation**. Apply dependency inversion or ports-and-adapters boundaries selectively when actual consumers and testability justify them.
+
+**Reason:** The existing separation between osu! logic, physical sample resolution, and audio infrastructure is valuable. Editor interaction, mutable state, undo/redo, playback synchronization, and future export may increase coupling if their boundaries are not reviewed before UI development. A pre-UI checkpoint offers a lower-cost opportunity to make targeted changes.
+
+**Constraints:** Preserve verified behavior, explicit resource ownership, and the logical/physical sample-identity distinction. Keep `Beatmap.cs` organized unless an actual responsibility boundary warrants splitting it (D010). Do not mandate full Clean Architecture, interfaces for every class, a fixed number of `.csproj` projects, or large-scale rewriting. Evaluate each refactor by benefit, cost, complexity, risk, maintainability, and timing, with appropriate regression verification.
+
+**Deferred decisions:** Exact module/project layout, specific abstractions, MVVM toolkit, editing-command/undo strategy, and mutable-state coordination will be selected when the actual pre-UI requirements and code consumers can be inspected. This decision creates a future review milestone; it does **not** authorize architectural implementation during the current Audio Infrastructure stage.

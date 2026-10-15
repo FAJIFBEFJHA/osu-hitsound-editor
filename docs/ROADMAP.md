@@ -245,6 +245,29 @@ Do not copy the removed diagnostic spike into `src/`. Production methods are re-
 
 ---
 
+## Architecture Review and Refactoring (Before Desktop UI)
+
+**Status: PLANNED — after Audio Infrastructure, before Desktop Editor and Timeline.**
+
+Objective: assess the actual code and make only justified architectural changes before WPF introduces more consumers and dependencies. The goal is to keep new features and modifications local to their owning responsibilities where practical, not to eliminate all future refactoring.
+
+Preferred direction: a modular monolith with clear domain, application-coordination, and infrastructure boundaries, plus WPF with MVVM for presentation. Apply Clean Architecture / ports-and-adapters principles selectively where there is a concrete benefit; no predetermined number of projects or interfaces.
+
+Planned:
+
+- [ ] Review the completed audio infrastructure, class consumers, dependency directions, and real extension points.
+- [ ] Assess responsibilities, data flow, resource ownership/lifetime, error handling, and concurrency; retain cohesive existing methods and classes.
+- [ ] Define the boundary between editor/application coordination and osu! timing/hitsound rules, physical sample lookup, and audio output.
+- [ ] Decide how editing changes, undo/redo, mutable beatmap state, and playback state should be coordinated before many UI controls depend on them.
+- [ ] Evaluate logical sample identity requirements for later export/optimization without implementing those stages prematurely.
+- [ ] Review each proposed refactor independently for benefit, cost, complexity, risk, maintainability, and timing; avoid splitting `Beatmap.cs` merely because of file size.
+- [ ] Perform any justified refactoring incrementally, preserving behavior through existing tests and focused new tests where necessary.
+- [ ] Establish practical MVVM boundaries before starting the WPF editor views.
+
+Out of scope: implementing UI features, exporter, global optimizer, or speculative general-purpose frameworks as part of this review.
+
+---
+
 ## Desktop Editor and Timeline
 
 **Status: NOT STARTED**
