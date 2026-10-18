@@ -250,7 +250,7 @@ public class AudioPlaybackEngine : IDisposable
             throw;
         }
     }
-    public void AddLoopingAudioSource(string filePath, double durationMilliseconds, int volume = 100, double delayMilliseconds = 0)
+    public void AddLoopingAudioSource(string filePath, double durationMilliseconds, int volume = 100, double delayMilliseconds = 0, double sourceOffsetMilliseconds = 0)
     {
         if (volume < 0 || volume > 100)
         {
@@ -272,6 +272,13 @@ public class AudioPlaybackEngine : IDisposable
                 nameof(delayMilliseconds),
                 delayMilliseconds,
                 "The audio delay must be finite and non-negative.");
+        }
+        if (!double.IsFinite(sourceOffsetMilliseconds) || sourceOffsetMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sourceOffsetMilliseconds),
+                sourceOffsetMilliseconds,
+                "The loop source offset must be finite and non-negative.");
         }
         if (mixer == null)
         {
@@ -309,6 +316,19 @@ public class AudioPlaybackEngine : IDisposable
         try
         {
             LoopingWaveStream loopReader = new LoopingWaveStream(reader);
+            long sourceFrameCount = loopReader.Length / loopReader.WaveFormat.BlockAlign;
+            double sourceOffsetFrames = sourceOffsetMilliseconds* loopReader.WaveFormat.SampleRate / 1000.0;
+            if (!double.IsFinite(sourceOffsetFrames) ||
+                sourceOffsetFrames >= 9007199254740992d)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(sourceOffsetMilliseconds),
+                    sourceOffsetMilliseconds,
+                    "The loop source offset exceeds the supported frame range.");
+            }
+
+            long phaseFrame = (long)(sourceOffsetFrames % sourceFrameCount);
+            loopReader.Position = phaseFrame * loopReader.WaveFormat.BlockAlign;
             ISampleProvider normalizedProvider = NormalizeForMixer(loopReader, currentMixer.WaveFormat.SampleRate);
             VolumeSampleProvider volumeProvider = new VolumeSampleProvider(normalizedProvider);
             volumeProvider.Volume = volume / 100f;
@@ -338,7 +358,7 @@ public class AudioPlaybackEngine : IDisposable
             {
                 activeReaders.Remove(limitedProvider, out readerToDispose);
             }
-            if(readerToDispose != null)
+            if (readerToDispose != null)
             {
                 readerToDispose.Dispose();
             }

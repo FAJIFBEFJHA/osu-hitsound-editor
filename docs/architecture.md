@@ -533,6 +533,8 @@ SliderWhistle
 
 `AddLoopingAudioSource(...)` uses `LoopingWaveStream`, normalized sample providers, volume, and an `OffsetSampleProvider` duration limit. The audio engine owns the playback readers; the looping wrapper does not dispose its underlying reader. In the bounded prequeue path, the body is started only when the slider-head event is included; repeat/tail events do not restart it.
 
+`AddLoopingAudioSource(...)` now also accepts an optional `sourceOffsetMilliseconds` independent of the requested playback duration and prequeue delay. The engine converts elapsed source time to native source frames, calculates its position within the sample, and assigns a frame-aligned byte position to `LoopingWaveStream` before normalization. The default offset of zero preserves existing head-triggered behavior. This supports phase-aligned playback, but `PlaySliderBody(...)` does not yet calculate remaining slider duration or supply a source offset for in-slider starts/seeks.
+
 ---
 
 ## Slider Ticks
@@ -710,7 +712,7 @@ The project uses **xUnit** for automated testing.
 Current checkpoint:
 
 ```text
-669/669 tests passing (full suite, 2026-10-14)
+674/674 tests passing (full suite, 2026-10-18)
 ```
 
 The test suite currently covers:
@@ -751,6 +753,7 @@ chronological TimedHitSoundEvent generation and playback dispatch
 unified TimedHitSoundPlaybackCursor advancement/seek
 relative delayed playback and mixer-reader cleanup
 finite looping sample playback, duration cutoff, volume, delays, and reader cleanup
+source-offset validation and frame-aligned loop phase with wraparound and finite cutoff
 prequeued interval playback, inclusive boundaries, and overlapping hitsounds
 shared-origin mixing of prequeued hitsounds with timeline audio
 finite slider-body playback, head/body delay alignment, whistle mixing and missing-sample outcomes

@@ -960,4 +960,116 @@ public class AudioPlaybackEngineTests
         }
     }
 
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void AddLoopingAudioSource_WhenSourceOffsetIsInvalid_ThrowsArgumentOutOfRangeException(
+        double sourceOffsetMilliseconds)
+    {
+        using AudioPlaybackEngine engine = new();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                engine.AddLoopingAudioSource(
+                    "audio.wav",
+                    durationMilliseconds: 100,
+                    sourceOffsetMilliseconds: sourceOffsetMilliseconds));
+
+        Assert.Equal("sourceOffsetMilliseconds", exception.ParamName);
+        Assert.Contains(
+            "The loop source offset must be finite and non-negative.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void AddLoopingAudioSource_WhenOffsetIsProvided_PreservesPhaseAndDuration()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid()}.wav");
+
+        WaveFormat format = new(44100, 16, 1);
+
+        byte[] audio = new byte[100 * format.BlockAlign];
+
+        for (int frame = 0; frame < 100; frame++)
+        {
+            audio[frame * 2] = 0;
+            audio[frame * 2 + 1] = frame < 50
+                ? (byte)64
+                : (byte)192;
+        }
+
+        using (WaveFileWriter writer = new(path, format))
+        {
+            writer.Write(audio, 0, audio.Length);
+        }
+
+        try
+        {
+            using AudioPlaybackEngine engine = new();
+
+            MixingSampleProvider mixer = new(
+                WaveFormat.CreateIeeeFloatWaveFormat(44100, 2))
+            {
+                ReadFully = true
+            };
+
+            FieldInfo? mixerField =
+                typeof(AudioPlaybackEngine).GetField(
+                    "mixer",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.NotNull(mixerField);
+            mixerField.SetValue(engine, mixer);
+
+            engine.AddLoopingAudioSource(
+                path,
+                durationMilliseconds: 2,
+                sourceOffsetMilliseconds: 1);
+
+            float[] output = new float[90 * 2];
+
+            Assert.Equal(
+                output.Length,
+                mixer.Read(output.AsSpan()));
+
+            void AssertStereoFrame(int frame, float expected)
+            {
+                Assert.InRange(
+                    output[frame * 2],
+                    expected - 0.01f,
+                    expected + 0.01f);
+
+                Assert.InRange(
+                    output[frame * 2 + 1],
+                    expected - 0.01f,
+                    expected + 0.01f);
+            }
+
+            // 1 ms = 44 complete source frames.
+            // Source frames 44-49 contain +0.5.
+            AssertStereoFrame(0, 0.5f);
+            AssertStereoFrame(5, 0.5f);
+
+            // Source frames 50-99 contain -0.5.
+            AssertStereoFrame(6, -0.5f);
+            AssertStereoFrame(55, -0.5f);
+
+            // The loop returns to source frame zero.
+            AssertStereoFrame(56, 0.5f);
+            AssertStereoFrame(87, 0.5f);
+
+            // 2 ms = 88 output frames.
+            AssertStereoFrame(88, 0f);
+            AssertStereoFrame(89, 0f);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
 }

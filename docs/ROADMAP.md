@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **669/669 tests passing** (full suite, 2026-10-14)
+Current full-suite checkpoint: **674/674 tests passing** (full suite, 2026-10-18)
 
 Selected infrastructure:
 
@@ -225,10 +225,14 @@ Discrete hitsound playback and event selection completed:
 - [x] Schedule slider-body layers when `QueueTimedHitSoundEventsInRange(...)` encounters the slider-head event (`SliderEdge`, `EdgeIndex = 0`), with the same relative delay as the head; do not restart the body at repeat or tail events
 - [x] Cover slider-body duration, optional whistle, delay, sample resolution, invalid inputs, and queued head/body mixing with hardware-independent tests
 - [x] Verify the complete 669-test suite (2026-10-14) via `New-SessionReview.ps1`
+- [x] Support optional `sourceOffsetMilliseconds` in `AudioPlaybackEngine.AddLoopingAudioSource(...)`, selecting a whole-frame sample phase before normalization while preserving existing duration, delay, volume, and reader lifetime behavior
+- [x] Verify offset validation, initial phase, loop wraparound, and finite cutoff; complete suite 674/674 passing (2026-10-18, `New-SessionReview.ps1`)
+- [x] Manually verify in osu!stable that starting within a slider preserves loop phase and plays only its remaining body duration; the editor integration remains pending
 
 Next:
 
-- [ ] Define and verify how to reconstruct a slider body when playback starts or seeks **inside** an already-running slider; head-triggered interval prequeueing alone does not cover that case
+- [ ] Extend `HitSoundPlaybackService.PlaySliderBody(...)` to accept elapsed slider time, use only the remaining body duration, and pass the elapsed time as `sourceOffsetMilliseconds`
+- [ ] Reconstruct active slider bodies when an interval begins inside a slider without synthesizing discrete head events or duplicating normal head-triggered playback
 - [ ] Design accurate audio-clock scheduling during active playback; prequeueing before the mixer advances is not a real-time scheduler
 - [ ] Coordinate seek, pause, stop, and queue reconstruction in the eventual playback controller
 - [ ] Connect the rendered-position timeline clock to the eventual editor timeline/UI
