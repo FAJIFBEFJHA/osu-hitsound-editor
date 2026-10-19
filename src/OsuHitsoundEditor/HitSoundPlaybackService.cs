@@ -134,7 +134,7 @@ public class HitSoundPlaybackService
         }
         return results;
     }
-    public List<SampleResolutionResult> PlaySliderBody(Beatmap beatmap, HitObject slider, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, double delayMilliseconds = 0)
+    public List<SampleResolutionResult> PlaySliderBody(Beatmap beatmap, HitObject slider, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, double delayMilliseconds = 0, double elapsedMilliseconds = 0)
     {
         ArgumentNullException.ThrowIfNull(beatmap);
         ArgumentNullException.ThrowIfNull(slider);
@@ -159,12 +159,27 @@ public class HitSoundPlaybackService
                 delayMilliseconds,
                 "The audio delay must be finite and non-negative.");
         }
+        if (!double.IsFinite(elapsedMilliseconds) || elapsedMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(elapsedMilliseconds),
+                elapsedMilliseconds,
+                "The elapsed slider time must be finite and non-negative.");
+        }
         double durationMilliseconds = beatmap.GetSliderDuration(slider);
         if (!double.IsFinite(durationMilliseconds) || durationMilliseconds <= 0)
         {
             throw new InvalidOperationException(
                 "The slider body duration must be finite and greater than zero.");
         }
+        if (elapsedMilliseconds >= durationMilliseconds)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(elapsedMilliseconds),
+                elapsedMilliseconds,
+                "The elapsed slider time must be less than the slider duration.");
+        }
+        double remainingDurationMilliseconds = durationMilliseconds - elapsedMilliseconds;
         List<HitSoundLayer> layers = beatmap.GetSliderBodyHitSoundLayers(slider);
         List<SampleResolutionResult> results = new List<SampleResolutionResult>();
         foreach (var layer in layers)
@@ -183,7 +198,7 @@ public class HitSoundPlaybackService
                         "A successful sample resolution must include a playable file path.");
                 }
 
-                engine.AddLoopingAudioSource(result.ResolvedPath, durationMilliseconds, layer.Volume, delayMilliseconds);
+                engine.AddLoopingAudioSource(result.ResolvedPath, remainingDurationMilliseconds, layer.Volume, delayMilliseconds, sourceOffsetMilliseconds: elapsedMilliseconds);
                 results.Add(result);
                 continue;
             }

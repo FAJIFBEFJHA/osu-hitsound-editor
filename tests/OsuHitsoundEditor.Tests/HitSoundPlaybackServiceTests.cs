@@ -7292,4 +7292,139 @@ public class HitSoundPlaybackServiceTests
             Directory.Delete(directory, true);
         }
     }
+
+    [Fact]
+    public void PlaySliderBody_WhenElapsedTimeProvided_PreservesPhaseAndRemainingDuration()
+    {
+        string directory = CreateTempDirectory();
+
+        try
+        {
+            string path = Path.Combine(directory, "normal-sliderslide.wav");
+            var format = new WaveFormat(44100, 16, 1);
+            byte[] audio = new byte[100 * format.BlockAlign];
+
+            for (int frame = 0; frame < 100; frame++)
+            {
+                audio[frame * 2] = 0;
+                audio[frame * 2 + 1] = frame < 50
+                    ? (byte)64
+                    : (byte)192;
+            }
+
+            using (var writer = new WaveFileWriter(path, format))
+            {
+                writer.Write(audio, 0, audio.Length);
+            }
+
+            var (beatmap, slider) = CreateTwoSpanSlider();
+            var service = new HitSoundPlaybackService();
+            var resolver = new SampleResolver();
+
+            using var engine = CreateEngineWithMixer(
+                out MixingSampleProvider mixer);
+
+            mixer.ReadFully = true;
+
+            SampleResolutionResult result = Assert.Single(
+                service.PlaySliderBody(
+                    beatmap, slider, directory, resolver, engine,
+                    delayMilliseconds: 10,
+                    elapsedMilliseconds: 1));
+
+            Assert.Equal(
+                SampleResolutionOutcome.BeatmapSampleFound,
+                result.Outcome);
+            Assert.Equal(path, result.ResolvedPath);
+
+            const int delayFrames = 441;
+            const int remainingFrames = 44055;
+            const int endFrame = delayFrames + remainingFrames;
+
+            float[] output = new float[(endFrame + 1) * 2];
+            Assert.Equal(output.Length, mixer.Read(output.AsSpan()));
+
+            static void AssertFrame(float[] samples, int frame, float expected)
+            {
+                Assert.InRange(
+                    samples[frame * 2], expected - 0.01f, expected + 0.01f);
+                Assert.InRange(
+                    samples[frame * 2 + 1], expected - 0.01f, expected + 0.01f);
+            }
+
+            AssertFrame(output, 0, 0f);
+            AssertFrame(output, delayFrames - 1, 0f);
+
+            // Offset: 1 ms = 44 complete source frames.
+            // Source frames 44-49 contain +0.5, at 50% volume.
+            AssertFrame(output, delayFrames, 0.25f);
+            AssertFrame(output, delayFrames + 5, 0.25f);
+
+            // Source frames 50-99 contain -0.5.
+            AssertFrame(output, delayFrames + 6, -0.25f);
+            AssertFrame(output, delayFrames + 55, -0.25f);
+
+            // The loop wraps to source frame zero.
+            AssertFrame(output, delayFrames + 56, 0.25f);
+
+            // Playback stops after the remaining 999 ms.
+            AssertFrame(output, endFrame - 1, -0.25f);
+            AssertFrame(output, endFrame, 0f);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1d)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PlaySliderBody_WhenElapsedTimeIsInvalid_ThrowsArgumentOutOfRangeException(
+        double elapsedMilliseconds)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderBody(
+                    beatmap, slider, Path.GetTempPath(),
+                    resolver, engine,
+                    elapsedMilliseconds: elapsedMilliseconds));
+
+        Assert.Equal("elapsedMilliseconds", exception.ParamName);
+        Assert.Contains(
+            "The elapsed slider time must be finite and non-negative.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(1000d)]
+    [InlineData(1001d)]
+    public void PlaySliderBody_WhenElapsedTimeReachesOrExceedsDuration_ThrowsArgumentOutOfRangeException(
+        double elapsedMilliseconds)
+    {
+        var (beatmap, slider) = CreateTwoSpanSlider();
+        var service = new HitSoundPlaybackService();
+        var resolver = new SampleResolver();
+        using var engine = new AudioPlaybackEngine();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                service.PlaySliderBody(
+                    beatmap, slider, Path.GetTempPath(),
+                    resolver, engine,
+                    elapsedMilliseconds: elapsedMilliseconds));
+
+        Assert.Equal("elapsedMilliseconds", exception.ParamName);
+        Assert.Contains(
+            "The elapsed slider time must be less than the slider duration.",
+            exception.Message);
+    }
+
 }

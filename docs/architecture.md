@@ -529,11 +529,11 @@ SliderWhistle
 
 `Finish` and `Clap` are not treated as continuous slider-body sounds.
 
-`HitSoundPlaybackService.PlaySliderBody(...)` obtains the slider's total duration from `Beatmap.GetSliderDuration(slider)` and its logical body layers from `GetSliderBodyHitSoundLayers(slider)`. Each layer is resolved through `SampleResolver`; an available local file is passed to `AudioPlaybackEngine.AddLoopingAudioSource(...)` with that duration, the layer volume, and an optional relative delay. Missing custom samples and external fallbacks are returned as resolution outcomes, not sent to the mixer. Invalid slider state or duration is rejected.
+`HitSoundPlaybackService.PlaySliderBody(...)` obtains the slider's total duration from `Beatmap.GetSliderDuration(slider)` and its logical body layers from `GetSliderBodyHitSoundLayers(slider)`. Its optional `elapsedMilliseconds` must be finite, non-negative, and less than the total slider duration. The service calculates `remainingDurationMilliseconds = durationMilliseconds - elapsedMilliseconds`; each layer is resolved through `SampleResolver`, and an available local file is passed to `AudioPlaybackEngine.AddLoopingAudioSource(...)` with the remaining duration, layer volume, optional relative delay, and `sourceOffsetMilliseconds: elapsedMilliseconds`. Missing custom samples and external fallbacks are returned as resolution outcomes, not sent to the mixer. Invalid slider state or duration is rejected.
 
 `AddLoopingAudioSource(...)` uses `LoopingWaveStream`, normalized sample providers, volume, and an `OffsetSampleProvider` duration limit. The audio engine owns the playback readers; the looping wrapper does not dispose its underlying reader. In the bounded prequeue path, the body is started only when the slider-head event is included; repeat/tail events do not restart it.
 
-`AddLoopingAudioSource(...)` now also accepts an optional `sourceOffsetMilliseconds` independent of the requested playback duration and prequeue delay. The engine converts elapsed source time to native source frames, calculates its position within the sample, and assigns a frame-aligned byte position to `LoopingWaveStream` before normalization. The default offset of zero preserves existing head-triggered behavior. This supports phase-aligned playback, but `PlaySliderBody(...)` does not yet calculate remaining slider duration or supply a source offset for in-slider starts/seeks.
+`AddLoopingAudioSource(...)` accepts an optional `sourceOffsetMilliseconds` independent of the requested playback duration and prequeue delay. The engine converts elapsed source time to native source frames, calculates its position within the sample, and assigns a frame-aligned byte position to `LoopingWaveStream` before normalization. The default offset of zero preserves existing head-triggered behavior. `PlaySliderBody(...)` now uses the offset and remaining duration when explicitly given elapsed slider time; automatic discovery and prequeueing of slider bodies already active at an in-slider interval start remain pending.
 
 ---
 
@@ -712,7 +712,7 @@ The project uses **xUnit** for automated testing.
 Current checkpoint:
 
 ```text
-674/674 tests passing (full suite, 2026-10-18)
+681/681 tests passing (full suite, 2026-10-18)
 ```
 
 The test suite currently covers:
@@ -757,6 +757,7 @@ source-offset validation and frame-aligned loop phase with wraparound and finite
 prequeued interval playback, inclusive boundaries, and overlapping hitsounds
 shared-origin mixing of prequeued hitsounds with timeline audio
 finite slider-body playback, head/body delay alignment, whistle mixing and missing-sample outcomes
+partial slider-body playback with preserved sample phase, remaining-duration cutoff, optional delay and elapsed-time validation
 ```
 
 The tests are located under:

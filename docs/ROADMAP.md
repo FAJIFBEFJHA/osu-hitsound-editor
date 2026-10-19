@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **674/674 tests passing** (full suite, 2026-10-18)
+Current full-suite checkpoint: **681/681 tests passing** (full suite, 2026-10-18)
 
 Selected infrastructure:
 
@@ -228,10 +228,11 @@ Discrete hitsound playback and event selection completed:
 - [x] Support optional `sourceOffsetMilliseconds` in `AudioPlaybackEngine.AddLoopingAudioSource(...)`, selecting a whole-frame sample phase before normalization while preserving existing duration, delay, volume, and reader lifetime behavior
 - [x] Verify offset validation, initial phase, loop wraparound, and finite cutoff; complete suite 674/674 passing (2026-10-18, `New-SessionReview.ps1`)
 - [x] Manually verify in osu!stable that starting within a slider preserves loop phase and plays only its remaining body duration; the editor integration remains pending
+- [x] Extend `HitSoundPlaybackService.PlaySliderBody(...)` with optional elapsed slider time, validate that it is finite and within the active body, calculate remaining duration, and pass the original elapsed time as `sourceOffsetMilliseconds` while preserving zero-offset calls
+- [x] Verify phase-aligned partial slider-body playback, remaining-duration cutoff, delayed playback, and invalid/boundary elapsed inputs; complete suite 681/681 passing (2026-10-18, `New-SessionReview.ps1`)
 
 Next:
 
-- [ ] Extend `HitSoundPlaybackService.PlaySliderBody(...)` to accept elapsed slider time, use only the remaining body duration, and pass the elapsed time as `sourceOffsetMilliseconds`
 - [ ] Reconstruct active slider bodies when an interval begins inside a slider without synthesizing discrete head events or duplicating normal head-triggered playback
 - [ ] Design accurate audio-clock scheduling during active playback; prequeueing before the mixer advances is not a real-time scheduler
 - [ ] Coordinate seek, pause, stop, and queue reconstruction in the eventual playback controller
