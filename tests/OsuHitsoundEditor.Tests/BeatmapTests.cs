@@ -3578,4 +3578,148 @@ public class BeatmapTests
             exception.Message);
     }
 
+    [Theory]
+    [InlineData(0d, false)]
+    [InlineData(999d, false)]
+    [InlineData(1000d, false)]
+    [InlineData(1000.5d, true)]
+    [InlineData(1999.5d, true)]
+    [InlineData(2000d, false)]
+    [InlineData(2001d, false)]
+    public void GetActiveSlidersAt_WhenTimeIsAroundSliderBounds_ReturnsExpectedResult(
+        double timeMilliseconds,
+        bool expectedActive)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+        beatmap.HitObjects.Add(slider);
+
+        List<HitObject> result =
+            beatmap.GetActiveSlidersAt(timeMilliseconds);
+
+        Assert.Equal(expectedActive, result.Contains(slider));
+        Assert.Equal(expectedActive ? 1 : 0, result.Count);
+    }
+
+    [Fact]
+    public void GetActiveSlidersAt_WhenBeatmapIsEmpty_ReturnsEmptyList()
+    {
+        var beatmap = new Beatmap();
+
+        List<HitObject> result = beatmap.GetActiveSlidersAt(1500);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetActiveSlidersAt_WithMixedObjects_ReturnsOnlyActiveSlidersInBeatmapOrder()
+    {
+        var (beatmap, firstSlider) = CreateSliderForTickRangeTests();
+
+        var secondSlider = new HitObject
+        {
+            ObjectType = 2,
+            Time = 1100,
+            Length = 140,
+            Slides = 2
+        };
+
+        var futureSlider = new HitObject
+        {
+            ObjectType = 2,
+            Time = 1800,
+            Length = 140,
+            Slides = 2
+        };
+
+        var endedSlider = new HitObject
+        {
+            ObjectType = 2,
+            Time = 0,
+            Length = 140,
+            Slides = 2
+        };
+
+        var circle = new HitObject
+        {
+            ObjectType = 1,
+            Time = 1200
+        };
+
+        beatmap.HitObjects.AddRange(new[]
+        {
+        secondSlider,
+        futureSlider,
+        circle,
+        firstSlider,
+        endedSlider
+    });
+
+        List<HitObject> result = beatmap.GetActiveSlidersAt(1500);
+
+        Assert.Collection(
+            result,
+            slider => Assert.Same(secondSlider, slider),
+            slider => Assert.Same(firstSlider, slider));
+    }
+
+    [Theory]
+    [InlineData(-1d)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void GetActiveSlidersAt_WhenTimeIsInvalid_ThrowsArgumentOutOfRangeException(
+        double timeMilliseconds)
+    {
+        var beatmap = new Beatmap();
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                beatmap.GetActiveSlidersAt(timeMilliseconds));
+
+        Assert.Equal("timeMilliseconds", exception.ParamName);
+        Assert.Contains(
+            "The time must be finite and non-negative.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0d)]
+    [InlineData(-140d)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void GetActiveSlidersAt_WhenSliderDurationIsInvalid_ThrowsInvalidOperationException(
+        double sliderLength)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+        slider.Length = sliderLength;
+        beatmap.HitObjects.Add(slider);
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                beatmap.GetActiveSlidersAt(1500));
+
+        Assert.Equal(
+            "The active slider duration must be finite and greater than zero.",
+            exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void GetActiveSlidersAt_WhenSliderHasInvalidSpanCount_ThrowsInvalidOperationException(
+        int slides)
+    {
+        var (beatmap, slider) = CreateSliderForTickRangeTests();
+        slider.Slides = slides;
+        beatmap.HitObjects.Add(slider);
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                beatmap.GetActiveSlidersAt(1500));
+
+        Assert.Equal(
+            "It is not possible to calculate the slider duration because the slider must have at least one span.",
+            exception.Message);
+    }
+
 }

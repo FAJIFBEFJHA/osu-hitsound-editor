@@ -207,6 +207,27 @@ public class HitSoundPlaybackService
         }
         return results;
     }
+    public List<(HitObject Slider, List<SampleResolutionResult> Results)> QueueActiveSliderBodiesAt(Beatmap beatmap, double startMilliseconds, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine)
+    {
+        ArgumentNullException.ThrowIfNull(beatmap);
+        ArgumentNullException.ThrowIfNull(resolver);
+        ArgumentNullException.ThrowIfNull(engine);
+        if (string.IsNullOrWhiteSpace(beatmapDirectory))
+        {
+            throw new ArgumentException(
+                "The beatmap directory must not be empty.",
+                nameof(beatmapDirectory));
+        }
+        List<HitObject> activeSliders = beatmap.GetActiveSlidersAt(startMilliseconds);
+        List<(HitObject Slider, List<SampleResolutionResult> Results)> results = new List<(HitObject Slider, List<SampleResolutionResult> Results)>();
+        foreach (var slider in activeSliders)
+        {
+            double elapsedMilliseconds = startMilliseconds - slider.Time;
+            List<SampleResolutionResult> bodyResults = PlaySliderBody(beatmap, slider, beatmapDirectory, resolver, engine, elapsedMilliseconds: elapsedMilliseconds);
+            results.Add((slider, bodyResults));
+        }
+        return results;
+    }
     public List<SampleResolutionResult> PlaySliderTick(Beatmap beatmap, HitObject slider, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, double delayMilliseconds = 0)
     {
         ArgumentNullException.ThrowIfNull(beatmap);
@@ -405,5 +426,34 @@ public class HitSoundPlaybackService
             results.Add((soundEvent, eventResults));
         }
         return results;
+    }
+    public (List<(TimedHitSoundEvent Event, List<SampleResolutionResult> Results)> DiscreteEvents, List<(HitObject Slider, List<SampleResolutionResult> Results)> ActiveSliderBodies) QueuePlaybackInterval(Beatmap beatmap, double startMilliseconds, double endMilliseconds, string beatmapDirectory, SampleResolver resolver, AudioPlaybackEngine engine, bool includeStart = false) // mira el tamaño de esta cosa
+    {
+        ArgumentNullException.ThrowIfNull(beatmap);
+        ArgumentNullException.ThrowIfNull(resolver);
+        ArgumentNullException.ThrowIfNull(engine);
+        if (string.IsNullOrWhiteSpace(beatmapDirectory))
+        {
+            throw new ArgumentException(
+                "The beatmap directory must not be empty.",
+                nameof(beatmapDirectory));
+        }
+        if (!double.IsFinite(startMilliseconds) || startMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(startMilliseconds),
+                startMilliseconds,
+                "The interval start must be finite and non-negative.");
+        }
+        if (!double.IsFinite(endMilliseconds) || endMilliseconds < startMilliseconds)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endMilliseconds),
+                endMilliseconds,
+                "The interval end must be finite and greater than or equal to the start.");
+        }
+        List<(HitObject Slider, List<SampleResolutionResult> Results)> activeSliderBodies = QueueActiveSliderBodiesAt(beatmap, startMilliseconds, beatmapDirectory, resolver, engine);
+        List<(TimedHitSoundEvent Event, List<SampleResolutionResult> Results)> discreteEvents = QueueTimedHitSoundEventsInRange(beatmap, startMilliseconds, endMilliseconds, beatmapDirectory, resolver, engine, includeStart);
+        return ((discreteEvents, activeSliderBodies));
     }
 }

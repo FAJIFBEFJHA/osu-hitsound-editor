@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **681/681 tests passing** (full suite, 2026-10-18)
+Current full-suite checkpoint: **741/741 tests passing, none skipped** (closing report, 2026-10-21 00:26:29); `git diff --check` passed.
 
 Selected infrastructure:
 
@@ -231,10 +231,17 @@ Discrete hitsound playback and event selection completed:
 - [x] Extend `HitSoundPlaybackService.PlaySliderBody(...)` with optional elapsed slider time, validate that it is finite and within the active body, calculate remaining duration, and pass the original elapsed time as `sourceOffsetMilliseconds` while preserving zero-offset calls
 - [x] Verify phase-aligned partial slider-body playback, remaining-duration cutoff, delayed playback, and invalid/boundary elapsed inputs; complete suite 681/681 passing (2026-10-18, `New-SessionReview.ps1`)
 
+- [x] Implement `Beatmap.GetActiveSlidersAt(...)` to select bodies active strictly after the head and before the tail
+- [x] Implement `HitSoundPlaybackService.QueueActiveSliderBodiesAt(...)` to reconstruct active bodies with preserved sample phase and only their remaining duration
+- [x] Implement `HitSoundPlaybackService.QueuePlaybackInterval(...)` to combine active-body reconstruction with discrete interval events, keep their results separate, and avoid duplicate head playback
+- [x] Add 60 permanent tests for these three methods, advancing the full suite from 681 to 741 passing tests (2026-10-21)
+
+Scheduler investigation: 16 temporary diagnostic checks passed (seven for frame accounting and nine for buffer-boundary scheduling and controlled concurrency). Their files were removed; they are not production code and are separate from the 741 permanent tests.
+
 Next:
 
-- [ ] Reconstruct active slider bodies when an interval begins inside a slider without synthesizing discrete head events or duplicating normal head-triggered playback
-- [ ] Design accurate audio-clock scheduling during active playback; prequeueing before the mixer advances is not a real-time scheduler
+- [ ] Study and progressively implement audio scheduling using absolute frames during active playback. The proposed `FrameScheduledSampleProvider` is not implemented, and its concurrency design still requires validation; prequeueing before the mixer advances is not an active-playback scheduler.
+- [ ] Support reduced playback speeds and define/verify `SamplesMatchPlaybackRate` behavior; implementation and technical decisions remain open
 - [ ] Coordinate seek, pause, stop, and queue reconstruction in the eventual playback controller
 - [ ] Connect the rendered-position timeline clock to the eventual editor timeline/UI
 - [ ] Handle device errors and runtime recovery beyond partial-initialization cleanup

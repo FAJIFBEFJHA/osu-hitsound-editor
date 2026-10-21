@@ -603,6 +603,40 @@ public class Beatmap
         }
         return hitCircles;
     }
+    public List<HitObject> GetActiveSlidersAt(double timeMilliseconds)
+    {
+        if (!double.IsFinite(timeMilliseconds) || timeMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(timeMilliseconds),
+                timeMilliseconds,
+                "The time must be finite and non-negative.");
+        }
+        List<HitObject> activeSliders = new List<HitObject>();
+        foreach(var hitObject in HitObjects)
+        {
+            if (!hitObject.IsSlider)
+            {
+                continue;
+            }
+            if(hitObject.Time >= timeMilliseconds)
+            {
+                continue;
+            }
+            double durationMilliseconds = GetSliderDuration(hitObject);
+            if (!double.IsFinite(durationMilliseconds) || durationMilliseconds <= 0)
+            {
+                throw new InvalidOperationException(
+                "The active slider duration must be finite and greater than zero.");
+            }
+            double elapsedMilliseconds = timeMilliseconds - hitObject.Time;
+            if(elapsedMilliseconds < durationMilliseconds)
+            {
+                activeSliders.Add(hitObject);
+            }
+        }
+        return activeSliders;
+    }
     public List<TimedHitSoundEvent> GetTimedHitSoundEventsInRange(double startExclusiveMilliseconds, double endInclusiveMilliseconds)
     {
         if (!double.IsFinite(startExclusiveMilliseconds))
