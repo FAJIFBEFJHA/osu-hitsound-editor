@@ -271,7 +271,10 @@ Planned:
 - [ ] Assess responsibilities, data flow, resource ownership/lifetime, error handling, and concurrency; retain cohesive existing methods and classes.
 - [ ] Define the boundary between editor/application coordination and osu! timing/hitsound rules, physical sample lookup, and audio output.
 - [ ] Decide how editing changes, undo/redo, mutable beatmap state, and playback state should be coordinated before many UI controls depend on them.
-- [ ] Evaluate logical sample identity requirements for later export/optimization without implementing those stages prematurely.
+- [ ] Define the behavior of operations over multiple selected hitobjects, including one logical undo step, and assess the model and editing responsibilities; leave the visual interaction to a desktop prototype.
+- [ ] Evaluate stable logical sample identity separately from physical filename/bank/index and content fingerprint for later export/optimization, without implementing those stages prematurely.
+- [ ] Identify preservation contracts for unedited `.osu` sections/fields, slider geometry, spinner endings, triggers, and shared sample resources so a future exporter does not silently discard source data.
+- [ ] Define how the editor detects and represents hitsound assignments that cannot be exported to the canonical legacy `.osu` format without changing their logical behavior.
 - [ ] Review each proposed refactor independently for benefit, cost, complexity, risk, maintainability, and timing; avoid splitting `Beatmap.cs` merely because of file size.
 - [ ] Perform any justified refactoring incrementally, preserving behavior through existing tests and focused new tests where necessary.
 - [ ] Establish practical MVVM boundaries before starting the WPF editor views.
@@ -289,11 +292,18 @@ Primary UI technology: WPF unless a materially better reason emerges.
 Planned:
 
 - [ ] Waveform
-- [ ] Hitsound events/tracks
-- [ ] Selection
-- [ ] Editing
+- [ ] Build the hitsample explorer, upper hitobject strip, and time-aligned hitsample rows; show natural sample duration without implying audio stretching or physical `.osu` tracks.
+- [ ] Create rows on use, retain empty rows, support manual order and removal; study safe deletion of nonempty rows.
+- [ ] Add manual collapsible row groups with an optional name/waveform summary; study summary-waveform calculation and moving rows between groups. Automatic grouping remains deferred.
+- [ ] Place/remove assignments by clicking a selected row at a hitobject; disable assignment editing during active playback. Study intentional same-sample multiplicity.
+- [ ] Prototype multi-hitobject selection and applying/removing hitsamples without ambiguous results; resolve detailed selection behavior before implementation.
+- [ ] Support assignment-level copy, cut, paste, undo, and redo; study unequal selections, existing-assignment conflicts, partial combinations, and clipboard properties.
+- [ ] Browse current-beatmap samples, a distributable basic library, and user-added folders; import files/folders and preview individual samples without eagerly copying or creating rows for every browsed file.
+- [ ] Add horizontal zoom, manual navigation, and playback follow with a forward margin; support suspension after manual navigation and restoration on stop. Study pause behavior and validate exact osu! editor shortcuts.
+- [ ] Show inherited timing-point and custom hitobject volume in a properties panel. Study independently exportable per-sample volume before promising it.
+- [ ] Prototype slider-head/repeat/tail/tick/body editing before selecting a UI design; consider feedback from experienced mappers.
 - [ ] Snapping
-- [ ] Reusable patterns if still beneficial after core editing works
+- [ ] Reassess reusable patterns, advanced visual customization, automatic grouping, and special MIDI workflows only if a concrete need appears after core editing works.
 
 External libraries may be used for generic UI/audio infrastructure after evaluation.
 
@@ -307,12 +317,11 @@ This stage must work deterministically before global optimization.
 
 Planned:
 
-- [ ] Export `.osu`
-- [ ] Export required sample files
-- [ ] Re-read exported beatmap
-- [ ] Reconstruct logical hitsound representation
-- [ ] Compare source and exported logical representations
-- [ ] Verify samples, multiplicity, timing, volume, and overlaps
+- [ ] Export `.osu` conservatively, preserving unedited source fields/sections and necessary object geometry and triggers.
+- [ ] Export the required sample files, including imported resources, without depending on user library paths; account for shared resources across difficulties.
+- [ ] Re-read the exported beatmap and actual exported sample package.
+- [ ] Reconstruct stable logical hitsound identities independently of physical names/indices and compare source and exported representations.
+- [ ] Verify each occurrence's sample identity, trigger, multiplicity, timing, volume, overlap, and continuous/discrete behavior; preserve external fallback references symbolically.
 - [ ] Add integration tests
 
 Required invariant:
@@ -354,11 +363,16 @@ Sample Optimization is not required for the first submission unless later develo
 
 Only begin after deterministic round-trip equivalence exists.
 
-Planned objective:
+Preliminary technical research was completed and its main conclusions reviewed on 2026-10-26: [hitsound optimization research](research/hitsound-optimization-research-2026-10-26.md). It is evidence and a set of proposals, not an approved optimizer design or implementation start. Full audible compatibility in osu!stable and several candidate transformations remain unverified; resolve the relevant stable behavior and equivalence domain before allowing those transformations.
+
+Required constraint:
+
+- Preserve logical and sonic equivalence.
+
+Optimization priorities among valid equivalent representations:
 
 1. Minimize redundant physical sample files.
 2. Among equally minimal solutions, minimize effective `(SampleSet, SampleIndex)` combinations.
-3. Preserve sonic/logical equivalence.
 
 Possible future approach:
 

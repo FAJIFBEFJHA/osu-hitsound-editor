@@ -430,3 +430,45 @@ Ordinary automated tests should remain hardware-independent where practical. Dev
 **Constraints:** Preserve verified behavior, explicit resource ownership, and the logical/physical sample-identity distinction. Keep `Beatmap.cs` organized unless an actual responsibility boundary warrants splitting it (D010). Do not mandate full Clean Architecture, interfaces for every class, a fixed number of `.csproj` projects, or large-scale rewriting. Evaluate each refactor by benefit, cost, complexity, risk, maintainability, and timing, with appropriate regression verification.
 
 **Deferred decisions:** Exact module/project layout, specific abstractions, MVVM toolkit, editing-command/undo strategy, and mutable-state coordination will be selected when the actual pre-UI requirements and code consumers can be inspected. This decision creates a future review milestone; it does **not** authorize architectural implementation during the current Audio Infrastructure stage.
+
+---
+
+## D028 — The editor uses hitobjects as its assignment reference
+
+**Decision:** Design the osu!standard editor around the mapper's hitobjects. Use DAWs, especially FL Studio, as visual and organizational inspiration without adopting free-floating musical events or a professional music-editing model. Keep the first interface sober and functional.
+
+The main view has a hitsample explorer, an upper time-aligned hitobject strip, and a hitsound timeline with one row per specific hitsample. Each appearance aligns with its hitobject; its visual width represents the audio file's natural duration, not an editable stretch. Rows organize the view and do not imply independent `.osu` audio tracks or change the physical sample representation (D002).
+
+**Reason:** This retains the familiar osu! assignment model while reducing repetitive navigation and making dense maps easier to read.
+
+---
+
+## D029 — Hitsample rows and groups are manual organization tools
+
+**Decision:** Create a row automatically when its hitsample is first used, reuse an existing row, append new rows in creation order, and allow manual reordering. A row remains after its last assignment is removed until the user removes the empty row.
+
+Allow manually created groups of rows. Groups can be expanded or collapsed without changing assignments, playback, or export. A collapsed group has a default summary row with its name and a waveform representation; the user can hide that summary row. Grouping is visual, not physical sample merging.
+
+**Deferred:** Deleting a nonempty row safely, calculating the group waveform, moving rows between groups, and automatic grouping require later study.
+
+---
+
+## D030 — Core assignment editing uses clicks and stops during playback
+
+**Decision:** After selecting a hitsample row, clicking a hitobject position assigns that sample; clicking the same assignment again removes it. Other rows can be used to build combinations on the same hitobject. Editing assignments, including placing, removing, or modifying them, is disabled during active playback.
+
+Copy, cut, and paste operate primarily on hitsound assignments of existing hitobjects, not on gameplay-object creation. Undo reverses an edit and redo restores it; an operation affecting several hitobjects should be reversible as one logical action. Support for selecting multiple hitobjects and applying properties to the selection is an agreed direction, with behavior and interaction to be designed during the D027 architecture review and prototyped in the desktop editor. This does not select a command implementation strategy under D027.
+
+**Deferred:** Multiplicity of the same sample at one instant, detailed multi-selection behavior, unequal selection sizes, paste conflicts and partial combinations, and which additional properties enter the clipboard. Explicit “apply/remove to selection” actions remain an unratified proposal.
+
+---
+
+## D031 — Sample browsing, preview, navigation, and volume follow the mapper workflow
+
+**Decision:** Provide a folder-based hitsample explorer, using FL Studio's browser as a functional reference. It distinguishes current-beatmap files, a bundled basic library when redistribution rights permit, and user-added folders. Support individual-file import, adding folders, subfolder navigation, and browsing personal libraries without immediately duplicating every file or creating a row for every browsed sample. Exported beatmaps must include their required samples without depending on personal library paths. Give each browsed hitsample an individual preview control.
+
+The timeline supports horizontal zoom, manual scrolling, hitobject-position navigation, and playback follow with a visible margin ahead. Follow starts with playback; manual navigation suspends it for that playback; stopping restores it for the next playback without requiring an immediate view jump. Offer manual reactivation and configurable inactivity-based reactivation as alternate behaviors. Use visible controls and familiar osu! editor shortcuts where verified, avoiding explorer/timeline conflicts.
+
+Represent volume using osu!'s inherited timing-point value or a custom hitobject value, with a properties panel for inspection and editing. Discreet indicators may identify custom values. Do not assume independently exportable volume for each sample within one hitobject (D020–D022 remain authoritative for legacy resolution).
+
+**Deferred:** Physical copy policy for imported samples, preview overlap and listening-volume details, pause/follow behavior, exact shortcuts, and independently exportable per-sample volume.
