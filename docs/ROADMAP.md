@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **741/741 tests passing, none skipped** (closing report, 2026-10-21 00:26:29); `git diff --check` passed.
+Current full-suite checkpoint: **764/764 tests passing**. The previous 741/741 checkpoint was recorded on 2026-10-21.
 
 Selected infrastructure:
 
@@ -236,11 +236,21 @@ Discrete hitsound playback and event selection completed:
 - [x] Implement `HitSoundPlaybackService.QueuePlaybackInterval(...)` to combine active-body reconstruction with discrete interval events, keep their results separate, and avoid duplicate head playback
 - [x] Add 60 permanent tests for these three methods, advancing the full suite from 681 to 741 passing tests (2026-10-21)
 
-Scheduler investigation: 16 temporary diagnostic checks passed (seven for frame accounting and nine for buffer-boundary scheduling and controlled concurrency). Their files were removed; they are not production code and are separate from the 741 permanent tests.
+Partial absolute-frame scheduling checkpoint:
+
+- [x] Add `FrameScheduledSampleProvider` with a `FramesRead` counter and a priority queue ordered by absolute frame and insertion order
+- [x] Split mixer reads at scheduled frame boundaries and activate events at their target frames
+- [x] Add 23 permanent `FrameScheduledSampleProvider` tests; full suite 764/764 passing
+
+The provider is not integrated with `AudioPlaybackEngine` or WASAPI. Concurrent `Schedule(...)` and `Read(...)` calls have no established correctness guarantee. Resource ownership/cleanup and failure recovery remain pending. This is partial infrastructure, not a completed active-playback scheduler.
+
+Earlier scheduler investigation: 16 temporary diagnostic checks passed (seven for frame accounting and nine for buffer-boundary scheduling and controlled concurrency). Their files were removed and are separate from the permanent suite; they do not establish a concurrency guarantee for the new provider.
 
 Next:
 
-- [ ] Study and progressively implement audio scheduling using absolute frames during active playback. The proposed `FrameScheduledSampleProvider` is not implemented, and its concurrency design still requires validation; prequeueing before the mixer advances is not an active-playback scheduler.
+- [ ] Integrate `FrameScheduledSampleProvider` with `AudioPlaybackEngine` and WASAPI, then verify absolute-frame scheduling during active playback
+- [ ] Define and verify concurrency between `Schedule(...)` and `Read(...)`
+- [ ] Define scheduled-source ownership, cleanup, and recovery after scheduling or read failures
 - [ ] Support reduced playback speeds and define/verify `SamplesMatchPlaybackRate` behavior; implementation and technical decisions remain open
 - [ ] Coordinate seek, pause, stop, and queue reconstruction in the eventual playback controller
 - [ ] Connect the rendered-position timeline clock to the eventual editor timeline/UI
