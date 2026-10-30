@@ -403,7 +403,8 @@ InitializeOutput()
     -> create/configure WasapiPlayer
     -> read DeviceMixFormat.SampleRate
     -> create persistent stereo float mixer
-    -> Init(mixer)
+    -> wrap mixer in FrameScheduledSampleProvider
+    -> Init(frame scheduler)
 
 Play() / Pause() / Stop()
     -> require initialized output
@@ -413,7 +414,7 @@ Dispose()
     -> clear output/mixer references
 ```
 
-`outputDevice` and `mixer` are persistent fields because later playback operations must use the same initialized output/mixer instance.
+`outputDevice`, `mixer`, and the frame scheduler are persistent fields because later playback operations must use the same initialized output path. WASAPI reads through `FrameScheduledSampleProvider` into `MixingSampleProvider`.
 
 Ordinary automated tests should remain hardware-independent where practical. Device-dependent WASAPI behavior is verified with focused manual/integration checks until a justified hardware test seam/environment exists.
 
@@ -472,3 +473,15 @@ The timeline supports horizontal zoom, manual scrolling, hitobject-position navi
 Represent volume using osu!'s inherited timing-point value or a custom hitobject value, with a properties panel for inspection and editing. Discreet indicators may identify custom values. Do not assume independently exportable volume for each sample within one hitobject (D020–D022 remain authoritative for legacy resolution).
 
 **Deferred:** Physical copy policy for imported samples, preview overlap and listening-volume details, pause/follow behavior, exact shortcuts, and independently exportable per-sample volume.
+
+---
+
+## D032 — Frame scheduler concurrency and failure contract
+
+**Decision:** `FrameScheduledSampleProvider` serializes `Read(...)` and `Schedule(...)` with `_scheduleLock`. A scheduling call made reentrantly during an active read is rejected. A scheduling request for a frame already consumed is rejected while holding the same lock.
+
+An internal failure while processing `Read(...)` faults the scheduler and propagates the original failure. Subsequent Read(...) calls with non-empty buffers and Schedule(...) calls with valid arguments reject the faulted instance; it cannot resume processing. Existing argument validation retains precedence. Input-validation failures before read processing do not establish this faulted state.
+
+**Reason:** Serializing reads and scheduling protects the frame position and queue from concurrent changes. Fail-stop avoids continuing from a potentially inconsistent mixer or queue state.
+
+**Deferred:** The origin of absolute frame positions, coordination with `Seek(...)` and `Stop()`, recovery by replacing a faulted scheduler, and ownership/cleanup of pending and active scheduled sources require further implementation and verification.

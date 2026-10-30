@@ -9,6 +9,7 @@ public class AudioPlaybackEngine : IDisposable
 {
     private WasapiPlayer? outputDevice;
     private MixingSampleProvider? mixer;
+    private FrameScheduledSampleProvider? frameScheduler;
     private readonly Dictionary<ISampleProvider, WaveStream> activeReaders = new();
     private WaveStream? timelineReader;
     private ISampleProvider? timelineProvider;
@@ -34,9 +35,12 @@ public class AudioPlaybackEngine : IDisposable
             currentMixer = new MixingSampleProvider(mixerFormat);
             currentMixer.MixerInputEnded += OnMixerInputEnded;
             currentMixer.ReadFully = true;
-            device.Init(currentMixer);
+            FrameScheduledSampleProvider currentScheduler = new FrameScheduledSampleProvider(currentMixer);
+            device.Init(currentScheduler);
             outputDevice = device;
             mixer = currentMixer;
+            frameScheduler = currentScheduler;
+
         }
         catch
         {
@@ -439,6 +443,7 @@ public class AudioPlaybackEngine : IDisposable
             outputDevice.Dispose();
             outputDevice = null;
         }
+        frameScheduler = null;
         if (currentMixer != null)
         {
             currentMixer.MixerInputEnded -= OnMixerInputEnded;

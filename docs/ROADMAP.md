@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **764/764 tests passing**. The previous 741/741 checkpoint was recorded on 2026-10-21.
+Current full-suite checkpoint: **767/767 tests passing** (2026-10-29, `New-SessionReview.ps1`). The previous 741/741 checkpoint was recorded on 2026-10-21.
 
 Selected infrastructure:
 
@@ -241,16 +241,21 @@ Partial absolute-frame scheduling checkpoint:
 - [x] Add `FrameScheduledSampleProvider` with a `FramesRead` counter and a priority queue ordered by absolute frame and insertion order
 - [x] Split mixer reads at scheduled frame boundaries and activate events at their target frames
 - [x] Add 23 permanent `FrameScheduledSampleProvider` tests; full suite 764/764 passing
+- [x] Synchronize `Read(...)` and `Schedule(...)` with `_scheduleLock` and reject reentrant scheduling during a read
+- [x] Make internal read-processing failures fail-stop: subsequent reads and schedules reject the faulted scheduler
+- [x] Connect `FrameScheduledSampleProvider` between `WasapiPlayer` and `MixingSampleProvider` in `AudioPlaybackEngine.InitializeOutput()`
+- [x] Verify the WASAPI connection with one temporary integration test (1/1) and audible playback; remove the temporary test afterward
+- [x] Verify the complete 767/767 permanent-test suite (2026-10-29, `New-SessionReview.ps1`)
 
-The provider is not integrated with `AudioPlaybackEngine` or WASAPI. Concurrent `Schedule(...)` and `Read(...)` calls have no established correctness guarantee. Resource ownership/cleanup and failure recovery remain pending. This is partial infrastructure, not a completed active-playback scheduler.
+The provider is now in the production WASAPI output path, and `Schedule(...)` and `Read(...)` are serialized. Absolute-frame scheduling during active playback, the frame origin, coordination with `Seek(...)` and `Stop()`, and complete ownership/cleanup of pending and active sources remain unverified. Fail-stop behavior does not provide recovery after an internal failure. This is partial infrastructure, not a completed active-playback scheduler.
 
 Earlier scheduler investigation: 16 temporary diagnostic checks passed (seven for frame accounting and nine for buffer-boundary scheduling and controlled concurrency). Their files were removed and are separate from the permanent suite; they do not establish a concurrency guarantee for the new provider.
 
 Next:
 
-- [ ] Integrate `FrameScheduledSampleProvider` with `AudioPlaybackEngine` and WASAPI, then verify absolute-frame scheduling during active playback
-- [ ] Define and verify concurrency between `Schedule(...)` and `Read(...)`
-- [ ] Define scheduled-source ownership, cleanup, and recovery after scheduling or read failures
+- [ ] Verify absolute-frame scheduling during active playback through the integrated WASAPI path
+- [ ] Define the origin of scheduled frame positions and coordinate the scheduler with `Seek(...)` and `Stop()`
+- [ ] Define complete ownership and cleanup of pending and active scheduled sources, plus recovery after internal failures
 - [ ] Support reduced playback speeds and define/verify `SamplesMatchPlaybackRate` behavior; implementation and technical decisions remain open
 - [ ] Coordinate seek, pause, stop, and queue reconstruction in the eventual playback controller
 - [ ] Connect the rendered-position timeline clock to the eventual editor timeline/UI

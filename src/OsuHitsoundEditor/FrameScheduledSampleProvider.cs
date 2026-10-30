@@ -10,6 +10,7 @@ public class FrameScheduledSampleProvider : ISampleProvider
     private long _nextOrder;
     private readonly MixingSampleProvider _mixer;
     private long _framesRead;
+    private bool _isFaulted;
 
     public FrameScheduledSampleProvider(MixingSampleProvider mixer)
     {
@@ -49,87 +50,100 @@ public class FrameScheduledSampleProvider : ISampleProvider
 
         int channels = WaveFormat.Channels;
         int totalSamplesRead = 0;
-        while (totalSamplesRead < buffer.Length)
+        lock (_scheduleLock)
         {
-            long currentFrame = FramesRead;
-            long? nextEventFrame = null;
-            lock (_scheduleLock)
+            if (_isFaulted)
             {
-                while (true)
+                throw new InvalidOperationException(
+                    "The frame scheduler is faulted and cannot be used.");
+            }
+
+            try
+            {
+                while (totalSamplesRead < buffer.Length)
                 {
-                    bool hasEvent = _scheduledEvents.TryPeek(out ISampleProvider? eventSource,
-                        out (long Frame, long Order) priority);
-                    if (hasEvent == false)
+                    long currentFrame = FramesRead;
+                    long? nextEventFrame = null;
+                    while (true)
                     {
-                        break;
+                        bool hasEvent = _scheduledEvents.TryPeek(out ISampleProvider? eventSource,
+                            out (long Frame, long Order) priority);
+                        if (hasEvent == false)
+                        {
+                            break;
+                        }
+
+                        if (priority.Frame < currentFrame)
+                        {
+                            throw new InvalidOperationException(
+                                "A scheduled event is earlier than the current read position.");
+                        }
+
+                        if (priority.Frame > currentFrame)
+                        {
+                            nextEventFrame = priority.Frame;
+                            break;
+                        }
+
+                        if (priority.Frame == currentFrame)
+                        {
+                            _mixer.AddMixerInput(eventSource);
+                            _scheduledEvents.Dequeue();
+                        }
                     }
 
-                    if (priority.Frame < currentFrame)
+                    int remainingFrames = (buffer.Length - totalSamplesRead) / channels;
+                    int segmentFrames = remainingFrames;
+                    if (nextEventFrame.HasValue)
+                    {
+                        long framesUntilEvent = nextEventFrame.Value - currentFrame;
+                        if (framesUntilEvent < segmentFrames)
+                        {
+                            segmentFrames = (int)framesUntilEvent;
+                        }
+                    }
+
+                    if (currentFrame > long.MaxValue - segmentFrames)
                     {
                         throw new InvalidOperationException(
-                            "A scheduled event is earlier than the current read position.");
+                            "The frame counter would exceed the supported range.");
                     }
 
-                    if (priority.Frame > currentFrame)
+                    Span<float> segment = buffer.Slice(totalSamplesRead, segmentFrames * channels);
+                    int samplesRead = _mixer.Read(segment);
+                    if (samplesRead < 0 || samplesRead > segment.Length)
                     {
-                        nextEventFrame = priority.Frame;
+                        throw new InvalidOperationException(
+                            "The mixer returned an invalid sample count.");
+                    }
+
+                    if (samplesRead % channels != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "The mixer returned an incomplete audio frame.");
+                    }
+
+                    if (samplesRead < segment.Length && nextEventFrame.HasValue)
+                    {
+                        segment.Slice(samplesRead).Clear();
+                        samplesRead = segment.Length;
+                    }
+
+                    totalSamplesRead += samplesRead;
+                    int completedFrames = samplesRead / channels;
+                    Interlocked.Add(ref _framesRead, completedFrames);
+                    if (samplesRead < segment.Length)
+                    {
                         break;
                     }
-
-                    if (priority.Frame == currentFrame)
-                    {
-                        _mixer.AddMixerInput(eventSource);
-                        _scheduledEvents.Dequeue();
-                    }
                 }
             }
-
-            int remainingFrames = (buffer.Length - totalSamplesRead) / channels;
-            int segmentFrames = remainingFrames;
-            if (nextEventFrame.HasValue)
+            catch
             {
-                long framesUntilEvent = nextEventFrame.Value - currentFrame;
-                if (framesUntilEvent < segmentFrames)
-                {
-                    segmentFrames = (int)framesUntilEvent;
-                }
-            }
-
-            if (currentFrame > long.MaxValue - segmentFrames)
-            {
-                throw new InvalidOperationException(
-                    "The frame counter would exceed the supported range.");
-            }
-
-            Span<float> segment = buffer.Slice(totalSamplesRead, segmentFrames * channels);
-            int samplesRead = _mixer.Read(segment);
-            if (samplesRead < 0 || samplesRead > segment.Length)
-            {
-                throw new InvalidOperationException(
-                    "The mixer returned an invalid sample count.");
-            }
-
-            if (samplesRead % channels != 0)
-            {
-                throw new InvalidOperationException(
-                    "The mixer returned an incomplete audio frame.");
-            }
-
-            if (samplesRead < segment.Length && nextEventFrame.HasValue)
-            {
-                segment.Slice(samplesRead).Clear();
-                samplesRead = segment.Length;
-            }
-
-            totalSamplesRead += samplesRead;
-            int completedFrames = samplesRead / channels;
-            Interlocked.Add(ref _framesRead, completedFrames);
-            if (samplesRead < segment.Length)
-            {
-                break;
+                _isFaulted = true;
+                throw;
             }
         }
-
         return totalSamplesRead;
     }
 
@@ -157,8 +171,19 @@ public class FrameScheduledSampleProvider : ISampleProvider
                 nameof(source));
         }
 
+        if (Monitor.IsEntered(_scheduleLock))
+        {
+            throw new InvalidOperationException(
+                "Scheduling from within an active audio read is not supported.");
+        }
+
         lock (_scheduleLock)
         {
+            if (_isFaulted)
+            {
+                throw new InvalidOperationException(
+                    "The frame scheduler is faulted and cannot be used.");
+            }
             if (framePosition < FramesRead)
             {
                 throw new ArgumentOutOfRangeException(
