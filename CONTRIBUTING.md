@@ -208,16 +208,39 @@ Small pull requests are generally easier to review than large ones.
 
 ## Commit messages
 
-Use concise commit messages that describe the actual change.
+Use Conventional Commits for new commits, with this subject format:
+
+```text
+type(scope): description
+```
+
+An explicit, meaningful scope is required. Name the area affected, such as `audio`, `architecture`, or `contributing`.
+
+Choose the type that describes the change:
+
+- `feat`: add new functionality.
+- `fix`: correct a bug.
+- `docs`: change documentation.
+- `test`: add or update tests.
+- `refactor`: restructure code without adding functionality or fixing a bug.
+- `chore`: perform maintenance or tooling work outside product behavior, documentation, and tests.
+
+Write a concise English description in imperative form, such as "add" or "fix". Do not end the subject with a period.
 
 Examples:
 
 ```text
-Add slider tick timing resolution
-Fix inherited sample set handling
-Add tests for invalid slider multiplier
-Update hitsound resolution documentation
+feat(audio): integrate absolute-frame hitsound scheduling during playback
+fix(audio): reject sources when the scheduler is faulted
+docs(architecture): plan modular refactor before WPF
+test(audio): verify scheduling reset preserves the faulted state
+refactor(audio): simplify reader cleanup
+chore(dependencies): update audio packages
 ```
+
+The commit body is optional. When included, separate it from the subject with a blank line and use it to explain the reason for the change or relevant context.
+
+Apply this convention to new commits; do not rewrite historical commits to match it.
 
 Avoid vague messages such as:
 
