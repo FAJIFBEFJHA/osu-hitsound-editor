@@ -12,6 +12,17 @@ public class FrameScheduledSampleProvider : ISampleProvider
     private long _framesRead;
     private bool _isFaulted;
 
+    public bool IsFaulted
+    {
+        get
+        {
+            lock (_scheduleLock)
+            {
+                return _isFaulted;
+            }
+        }
+    }
+
     public FrameScheduledSampleProvider(MixingSampleProvider mixer)
     {
         if (mixer == null)
@@ -200,6 +211,22 @@ public class FrameScheduledSampleProvider : ISampleProvider
 
             _scheduledEvents.Enqueue(source, (framePosition, _nextOrder));
             _nextOrder++;
+        }
+    }
+
+    public void ResetScheduling()
+    {
+        if (Monitor.IsEntered(_scheduleLock))
+        {
+            throw new InvalidOperationException(
+                "Resetting scheduling from within an active audio read is not supported.");
+        }
+
+        lock (_scheduleLock)
+        {
+            _scheduledEvents.Clear();
+            Interlocked.Exchange(ref _framesRead, 0);
+            _nextOrder = 0;
         }
     }
 }

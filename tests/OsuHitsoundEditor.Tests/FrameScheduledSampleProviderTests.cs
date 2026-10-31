@@ -545,6 +545,7 @@ public class FrameScheduledSampleProviderTests
             return buffer.Length;
         }
     }
+
     [Fact]
     public void Schedule_WhenCalledDuringRead_RejectsReentrantCall()
     {
@@ -559,8 +560,7 @@ public class FrameScheduledSampleProviderTests
         mixer.AddMixerInput(new CallbackSampleProvider(format, () =>
         {
             attemptedSchedule = true;
-            scheduleException = Record.Exception(
-                () => provider.Schedule(source, 5));
+            scheduleException = Record.Exception(() => provider.Schedule(source, 5));
         }));
 
         int samplesRead = provider.Read(new float[20]);
@@ -577,11 +577,11 @@ public class FrameScheduledSampleProviderTests
         Assert.Equal(20, samplesRead);
         Assert.Equal(10L, provider.FramesRead);
 
-        Exception? afterReadException = Record.Exception(
-            () => provider.Schedule(source, 10));
+        Exception? afterReadException = Record.Exception(() => provider.Schedule(source, 10));
 
         Assert.Null(afterReadException);
     }
+
     private sealed class CallbackSampleProvider : ISampleProvider
     {
         private readonly Action _callback;
@@ -610,6 +610,7 @@ public class FrameScheduledSampleProviderTests
         WaveFormat format = WaveFormat.CreateIeeeFloatWaveFormat(48000, 2);
         MixingSampleProvider mixer = new(format) { ReadFully = true };
         FrameScheduledSampleProvider provider = new(mixer);
+        Assert.False(provider.IsFaulted);
 
         int sourceReads = 0;
 
@@ -623,22 +624,19 @@ public class FrameScheduledSampleProviderTests
                     "Simulated sample read failure.");
             }
         });
-
         provider.Schedule(faultingSource, 2);
 
         InvalidOperationException originalException =
-            Assert.Throws<InvalidOperationException>(
-                () => provider.Read(new float[10]));
+            Assert.Throws<InvalidOperationException>(() => provider.Read(new float[10]));
 
         Assert.Equal(
             "Simulated sample read failure.",
             originalException.Message);
-
+        Assert.True(provider.IsFaulted);
         Assert.Equal(2L, provider.FramesRead);
 
         InvalidOperationException readException =
-            Assert.Throws<InvalidOperationException>(
-                () => provider.Read(new float[4]));
+            Assert.Throws<InvalidOperationException>(() => provider.Read(new float[4]));
 
         Assert.Equal(
             "The frame scheduler is faulted and cannot be used.",
@@ -647,8 +645,7 @@ public class FrameScheduledSampleProviderTests
         SignalGenerator newSource = new(48000, 2);
 
         InvalidOperationException scheduleException =
-            Assert.Throws<InvalidOperationException>(
-                () => provider.Schedule(newSource, 2));
+            Assert.Throws<InvalidOperationException>(() => provider.Schedule(newSource, 2));
 
         Assert.Equal(
             "The frame scheduler is faulted and cannot be used.",
@@ -656,6 +653,121 @@ public class FrameScheduledSampleProviderTests
 
         Assert.Equal(1, sourceReads);
         Assert.Equal(2L, provider.FramesRead);
+        provider.ResetScheduling();
+
+        Assert.True(provider.IsFaulted);
+
+        Assert.Throws<InvalidOperationException>(
+            () => provider.Read(new float[4]));
     }
 
+    [Fact]
+    public void ResetScheduling_ClearsPendingEventsAndResetsFramePosition()
+    {
+        WaveFormat format = WaveFormat.CreateIeeeFloatWaveFormat(48000, 2);
+        MixingSampleProvider mixer = new(format) { ReadFully = true };
+        FrameScheduledSampleProvider provider = new(mixer);
+
+        SignalGenerator pendingSource = new(48000, 2)
+        {
+            Type = SignalGeneratorType.Square,
+            Gain = 0.25
+        };
+
+        provider.Schedule(pendingSource, 4);
+
+        float[] beforeReset = new float[4];
+        Assert.Equal(4, provider.Read(beforeReset));
+        Assert.Equal(new float[4], beforeReset);
+        Assert.Equal(2L, provider.FramesRead);
+
+        provider.ResetScheduling();
+
+        Assert.Equal(0L, provider.FramesRead);
+
+        float[] afterReset = new float[12];
+        int samplesRead = provider.Read(afterReset);
+
+        Assert.Equal(12, samplesRead);
+        Assert.Equal(new float[12], afterReset);
+        Assert.Equal(6L, provider.FramesRead);
+    }
+
+    [Fact]
+    public void ResetScheduling_AllowsSchedulingFromNewOrigin()
+    {
+        WaveFormat format = WaveFormat.CreateIeeeFloatWaveFormat(48000, 2);
+        MixingSampleProvider mixer = new(format) { ReadFully = true };
+        FrameScheduledSampleProvider provider = new(mixer);
+
+        provider.Read(new float[12]);
+        Assert.Equal(6L, provider.FramesRead);
+
+        provider.ResetScheduling();
+
+        SignalGenerator source = new(48000, 2)
+        {
+            Type = SignalGeneratorType.Square,
+            Gain = 0.25
+        };
+
+        provider.Schedule(source, 2);
+
+        float[] buffer = new float[8];
+        int samplesRead = provider.Read(buffer);
+
+        Assert.Equal(8, samplesRead);
+        Assert.Equal(4L, provider.FramesRead);
+        Assert.Equal(
+            new float[]
+            {
+                0f, 0f, 0f, 0f,
+                -0.25f, -0.25f, -0.25f, -0.25f
+            },
+            buffer);
+    }
+
+    [Fact]
+    public void ResetScheduling_DoesNotRecoverFaultedScheduler()
+    {
+        WaveFormat format = WaveFormat.CreateIeeeFloatWaveFormat(48000, 2);
+        MixingSampleProvider mixer = new(format) { ReadFully = true };
+        FrameScheduledSampleProvider provider = new(mixer);
+
+        CallbackSampleProvider faultingSource = new(format, () =>
+        {
+            throw new InvalidOperationException(
+                "Simulated sample read failure.");
+        });
+
+        provider.Schedule(faultingSource, 2);
+
+        InvalidOperationException originalException =
+            Assert.Throws<InvalidOperationException>(() => provider.Read(new float[10]));
+
+        Assert.Equal(
+            "Simulated sample read failure.",
+            originalException.Message);
+        Assert.Equal(2L, provider.FramesRead);
+
+        provider.ResetScheduling();
+
+        Assert.Equal(0L, provider.FramesRead);
+
+        InvalidOperationException readException =
+            Assert.Throws<InvalidOperationException>(() => provider.Read(new float[4]));
+
+        Assert.Equal(
+            "The frame scheduler is faulted and cannot be used.",
+            readException.Message);
+
+        SignalGenerator newSource = new(48000, 2);
+
+        InvalidOperationException scheduleException =
+            Assert.Throws<InvalidOperationException>(() => provider.Schedule(newSource, 0));
+
+        Assert.Equal(
+            "The frame scheduler is faulted and cannot be used.",
+            scheduleException.Message);
+    }
 }

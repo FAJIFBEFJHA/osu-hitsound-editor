@@ -17,8 +17,7 @@ public class AudioPlaybackEngineTests
             $"{Guid.NewGuid()}.wav");
 
         FileNotFoundException exception =
-            Assert.Throws<FileNotFoundException>(
-                () => engine.OpenAudioFile(path));
+            Assert.Throws<FileNotFoundException>(() => engine.OpenAudioFile(path));
 
         Assert.Equal(
             "The audio file does not exist.",
@@ -43,8 +42,7 @@ public class AudioPlaybackEngineTests
         try
         {
             NotSupportedException exception =
-                Assert.Throws<NotSupportedException>(
-                    () => engine.OpenAudioFile(path));
+                Assert.Throws<NotSupportedException>(() => engine.OpenAudioFile(path));
 
             Assert.Equal(
                 "The audio format '.txt' is not supported.",
@@ -101,6 +99,7 @@ public class AudioPlaybackEngineTests
             File.Delete(path);
         }
     }
+
     [Fact]
     public void NormalizeForMixer_WhenInputIsStereoAtTargetRate_KeepsFormat()
     {
@@ -244,108 +243,108 @@ public class AudioPlaybackEngineTests
             File.Delete(path);
         }
     }
+
     [Fact]
     public void Play_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
     {
         var engine = new AudioPlaybackEngine();
 
         InvalidOperationException exception =
-            Assert.Throws<InvalidOperationException>(
-                () => engine.Play());
+            Assert.Throws<InvalidOperationException>(() => engine.Play());
 
         Assert.Equal(
             "The audio output has not been initialized.",
             exception.Message);
     }
+
     [Fact]
     public void Pause_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
     {
         var engine = new AudioPlaybackEngine();
 
         InvalidOperationException exception =
-            Assert.Throws<InvalidOperationException>(
-                () => engine.Pause());
+            Assert.Throws<InvalidOperationException>(() => engine.Pause());
 
         Assert.Equal(
             "The audio output has not been initialized.",
             exception.Message);
     }
+
     [Fact]
     public void Stop_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
     {
         var engine = new AudioPlaybackEngine();
 
         InvalidOperationException exception =
-            Assert.Throws<InvalidOperationException>(
-                () => engine.Stop());
+            Assert.Throws<InvalidOperationException>(() => engine.Stop());
 
         Assert.Equal(
             "The audio output has not been initialized.",
             exception.Message);
     }
+
     [Fact]
     public void AddAudioSource_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
     {
         var engine = new AudioPlaybackEngine();
 
         InvalidOperationException exception =
-            Assert.Throws<InvalidOperationException>(
-                () => engine.AddAudioSource("audio.wav"));
+            Assert.Throws<InvalidOperationException>(() => engine.AddAudioSource("audio.wav"));
 
         Assert.Equal(
             "The audio output has not been initialized.",
             exception.Message);
     }
+
     [Fact]
     public void LoadTimelineAudio_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
     {
         var engine = new AudioPlaybackEngine();
 
         InvalidOperationException exception =
-            Assert.Throws<InvalidOperationException>(
-                () => engine.LoadTimelineAudio("audio.wav"));
+            Assert.Throws<InvalidOperationException>(() => engine.LoadTimelineAudio("audio.wav"));
 
         Assert.Equal(
             "The audio output has not been initialized.",
             exception.Message);
     }
+
     [Fact]
     public void Seek_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
     {
         using var engine = new AudioPlaybackEngine();
 
         InvalidOperationException exception =
-            Assert.Throws<InvalidOperationException>(
-                () => engine.Seek(1000));
+            Assert.Throws<InvalidOperationException>(() => engine.Seek(1000));
 
         Assert.Equal(
             "The audio output has not been initialized.",
             exception.Message);
     }
+
     [Fact]
     public void GetTimelinePositionMilliseconds_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
     {
         using var engine = new AudioPlaybackEngine();
 
         InvalidOperationException exception =
-            Assert.Throws<InvalidOperationException>(
-                () => engine.GetTimelinePositionMilliseconds());
+            Assert.Throws<InvalidOperationException>(() => engine.GetTimelinePositionMilliseconds());
 
         Assert.Equal(
             "The audio output has not been initialized.",
             exception.Message);
     }
+
     [Theory]
     [InlineData(-1)]
     [InlineData(101)]
     public void AddAudioSource_WhenVolumeIsInvalid_ThrowsArgumentOutOfRangeException(
-    int volume)
+        int volume)
     {
         using var engine = new AudioPlaybackEngine();
 
         ArgumentOutOfRangeException exception =
-            Assert.Throws<ArgumentOutOfRangeException>(
-                () => engine.AddAudioSource("audio.wav", volume));
+            Assert.Throws<ArgumentOutOfRangeException>(() => engine.AddAudioSource("audio.wav", volume));
 
         Assert.Equal("volume", exception.ParamName);
         Assert.Equal(volume, exception.ActualValue);
@@ -422,14 +421,15 @@ public class AudioPlaybackEngineTests
             File.Delete(path);
         }
     }
+
     [Fact]
     public void AddAudioSource_WhenTwoSamplesOverlap_MixesTheirVolumes()
     {
         string[] paths =
         {
-        Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.wav"),
-        Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.wav")
-    };
+            Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.wav"),
+            Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.wav")
+        };
 
         try
         {
@@ -575,9 +575,9 @@ public class AudioPlaybackEngineTests
             Assert.NotNull(mixerField);
             mixerField.SetValue(engine, mixer);
             MethodInfo? handlerMethod =
-            typeof(AudioPlaybackEngine).GetMethod(
-                "OnMixerInputEnded",
-                BindingFlags.Instance | BindingFlags.NonPublic);
+                typeof(AudioPlaybackEngine).GetMethod(
+                    "OnMixerInputEnded",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
 
             Assert.NotNull(handlerMethod);
 
@@ -1070,6 +1070,210 @@ public class AudioPlaybackEngineTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void Dispose_WhenCalledMultipleTimes_DoesNotThrow()
+    {
+        using AudioPlaybackEngine engine = new();
+
+        engine.Dispose();
+
+        Exception? exception = Record.Exception(() => engine.Dispose());
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void PlaybackOperations_AfterDispose_ThrowObjectDisposedException()
+    {
+        using AudioPlaybackEngine engine = new();
+
+        engine.Dispose();
+
+        ObjectDisposedException exception =
+            Assert.Throws<ObjectDisposedException>(() => engine.InitializeOutput());
+
+        Assert.Equal(
+            nameof(AudioPlaybackEngine),
+            exception.ObjectName);
+
+        Assert.Throws<ObjectDisposedException>(() => engine.Play());
+
+        Assert.Throws<ObjectDisposedException>(() => engine.Pause());
+
+        Assert.Throws<ObjectDisposedException>(() => engine.Stop());
+
+        Assert.Throws<ObjectDisposedException>(() => engine.Seek(0));
+
+        Assert.Throws<ObjectDisposedException>(() => engine.GetTimelinePositionMilliseconds());
+
+        Assert.Throws<ObjectDisposedException>(() => engine.LoadTimelineAudio("unused.wav"));
+
+        Assert.Throws<ObjectDisposedException>(() => engine.AddAudioSource("unused.wav"));
+
+        Assert.Throws<ObjectDisposedException>(() => engine.AddLoopingAudioSource("unused.wav", 100));
+    }
+
+    [Fact]
+    public void Dispose_WhenReaderDisposalFails_StillReleasesRemainingReaders()
+    {
+        using AudioPlaybackEngine engine = new();
+
+        FieldInfo? readersField =
+            typeof(AudioPlaybackEngine).GetField(
+                "activeReaders",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(readersField);
+
+        Dictionary<ISampleProvider, WaveStream> readers =
+            Assert.IsType<Dictionary<ISampleProvider, WaveStream>>(
+                readersField.GetValue(engine));
+
+        TrackingWaveStream failingReader = new(throwOnDispose: true);
+        TrackingWaveStream workingReader = new();
+
+        readers.Add(new SignalGenerator(44100, 2), failingReader);
+        readers.Add(new SignalGenerator(44100, 2), workingReader);
+
+        AggregateException exception =
+            Assert.Throws<AggregateException>(() => engine.Dispose());
+
+        Assert.Single(exception.InnerExceptions);
+        Assert.IsType<IOException>(exception.InnerExceptions[0]);
+
+        Assert.True(failingReader.WasDisposed);
+        Assert.True(workingReader.WasDisposed);
+        Assert.Empty(readers);
+
+        engine.Dispose();
+    }
+
+    private sealed class TrackingWaveStream : WaveStream
+    {
+        private readonly bool throwOnDispose;
+
+        public bool WasDisposed { get; private set; }
+
+        public TrackingWaveStream(bool throwOnDispose = false)
+        {
+            this.throwOnDispose = throwOnDispose;
+        }
+
+        public override WaveFormat WaveFormat { get; } =
+            WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
+
+        public override long Length => 0;
+
+        public override long Position { get; set; }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return 0;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                WasDisposed = true;
+
+                if (throwOnDispose)
+                {
+                    throw new IOException(
+                        "Simulated reader disposal failure.");
+                }
+            }
+
+            base.Dispose(disposing);
+        }
+    }
+
+    [Fact]
+    public void ScheduleAudioSource_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
+    {
+        using AudioPlaybackEngine engine = new();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() => engine.ScheduleAudioSource("unused.wav", 100));
+
+        Assert.Equal(
+            "The audio output has not been initialized.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void ScheduleAudioSource_WhenEngineIsDisposed_ThrowsObjectDisposedException()
+    {
+        using AudioPlaybackEngine engine = new();
+
+        engine.Dispose();
+
+        ObjectDisposedException exception =
+            Assert.Throws<ObjectDisposedException>(() => engine.ScheduleAudioSource("unused.wav", 100));
+
+        Assert.Equal(
+            nameof(AudioPlaybackEngine),
+            exception.ObjectName);
+    }
+    [Theory]
+    [InlineData(nameof(AudioPlaybackEngine.LoadTimelineAudio))]
+    [InlineData(nameof(AudioPlaybackEngine.AddAudioSource))]
+    [InlineData(nameof(AudioPlaybackEngine.AddLoopingAudioSource))]
+    public void AudioInputOperations_WhenSchedulerIsFaulted_RejectBeforeOpeningFile(
+        string operation)
+    {
+        using AudioPlaybackEngine engine = new();
+
+        MixingSampleProvider mixer = new(
+            WaveFormat.CreateIeeeFloatWaveFormat(48000, 2));
+
+        FrameScheduledSampleProvider scheduler = new(mixer);
+
+        FieldInfo? mixerField = typeof(AudioPlaybackEngine).GetField(
+            "mixer", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        FieldInfo? schedulerField = typeof(AudioPlaybackEngine).GetField(
+            "frameScheduler", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        FieldInfo? faultField = typeof(FrameScheduledSampleProvider).GetField(
+            "_isFaulted", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(mixerField);
+        Assert.NotNull(schedulerField);
+        Assert.NotNull(faultField);
+
+        mixerField.SetValue(engine, mixer);
+        schedulerField.SetValue(engine, scheduler);
+        faultField.SetValue(scheduler, true);
+
+        Assert.True(scheduler.IsFaulted);
+
+        string missingPath = Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid():N}.wav");
+
+        Action action = operation switch
+        {
+            nameof(AudioPlaybackEngine.LoadTimelineAudio) =>
+                () => engine.LoadTimelineAudio(missingPath),
+
+            nameof(AudioPlaybackEngine.AddAudioSource) =>
+                () => engine.AddAudioSource(missingPath),
+
+            nameof(AudioPlaybackEngine.AddLoopingAudioSource) =>
+                () => engine.AddLoopingAudioSource(missingPath, 100),
+
+            _ => throw new ArgumentOutOfRangeException(nameof(operation))
+        };
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(action);
+
+        Assert.Equal(
+            "The frame scheduler is faulted and cannot be used.",
+            exception.Message);
     }
 
 }

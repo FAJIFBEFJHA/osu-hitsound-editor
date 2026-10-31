@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **767/767 tests passing** (2026-10-29, `New-SessionReview.ps1`). The previous 741/741 checkpoint was recorded on 2026-10-21.
+Current full-suite checkpoint: **778/778 passed, 0 failed, 0 skipped** (review: 2026-10-31 02:42:30; `dotnet test` exit code 0; `git diff --check` exit code 0). The baseline was 767/767 permanent tests on 2026-10-29. The previous 741/741 checkpoint was recorded on 2026-10-21.
 
 Selected infrastructure:
 
@@ -247,15 +247,27 @@ Partial absolute-frame scheduling checkpoint:
 - [x] Verify the WASAPI connection with one temporary integration test (1/1) and audible playback; remove the temporary test afterward
 - [x] Verify the complete 767/767 permanent-test suite (2026-10-29, `New-SessionReview.ps1`)
 
-The provider is now in the production WASAPI output path, and `Schedule(...)` and `Read(...)` are serialized. Absolute-frame scheduling during active playback, the frame origin, coordination with `Seek(...)` and `Stop()`, and complete ownership/cleanup of pending and active sources remain unverified. Fail-stop behavior does not provide recovery after an internal failure. This is partial infrastructure, not a completed active-playback scheduler.
+At the 2026-10-29 checkpoint, the provider was in the production WASAPI path with serialized scheduling/reads, while active-playback scheduling, frame origin, seek/stop coordination, and source cleanup were still unverified.
+
+Absolute-frame scheduling checkpoint (2026-10-31):
+
+- [x] Implement `AudioPlaybackEngine.ScheduleAudioSource(...)` using absolute timeline event time; derive the whole scheduled frame from `(eventTimeMilliseconds - timelineBaseMilliseconds) * mixerSampleRate / 1000`
+- [x] Add `ResetScheduling()` to clear pending events and reset `FramesRead` and insertion order without clearing the faulted state
+- [x] Coordinate `Seek(...)` with stopped output, scheduling reset, transient-source cleanup, timeline-provider reconstruction, and resume when previously playing
+- [x] Cancel scheduled events on `Stop()`, including without timeline audio; handle a faulted scheduler without normal timeline reconstruction
+- [x] Serialize playback-state operations with `playbackStateLock` and scheduler operations with `_scheduleLock`; keep mixer input callbacks free of `playbackStateLock`
+- [x] Keep pending/active readers and output device owned by the engine; dispose output before readers, support repeated disposal, and aggregate individual reader-disposal errors
+- [x] Expose scheduler `IsFaulted` for engine checks; reject scheduling, play, seek, timeline-position queries, and source admission on a known faulted scheduler as applicable
+- [x] Pass three focused WASAPI scheduling integration tests and five focused fail-stop verification cases; remove temporary hardware-dependent test files
+- [x] Verify the final 778/778 suite at 2026-10-31 02:42:30 (0 failed, 0 skipped; `dotnet test` and `git diff --check` exit codes 0)
+
+Active-playback frame scheduling is separate from the older bounded relative-delay prequeue path. `FramesRead` measures scheduler consumption; the timeline clock still uses WASAPI rendered position plus the timeline base. The focused WASAPI checks depend on the tested hardware and do not establish hardware independence or universal concurrency correctness. Fail-stop recovery remains pending.
 
 Earlier scheduler investigation: 16 temporary diagnostic checks passed (seven for frame accounting and nine for buffer-boundary scheduling and controlled concurrency). Their files were removed and are separate from the permanent suite; they do not establish a concurrency guarantee for the new provider.
 
 Next:
 
-- [ ] Verify absolute-frame scheduling during active playback through the integrated WASAPI path
-- [ ] Define the origin of scheduled frame positions and coordinate the scheduler with `Seek(...)` and `Stop()`
-- [ ] Define complete ownership and cleanup of pending and active scheduled sources, plus recovery after internal failures
+- [ ] Handle remaining partial cleanup failures and define recovery after internal scheduler failures; `ResetScheduling()` does not recover a faulted scheduler
 - [ ] Support reduced playback speeds and define/verify `SamplesMatchPlaybackRate` behavior; implementation and technical decisions remain open
 - [ ] Coordinate seek, pause, stop, and queue reconstruction in the eventual playback controller
 - [ ] Connect the rendered-position timeline clock to the eventual editor timeline/UI

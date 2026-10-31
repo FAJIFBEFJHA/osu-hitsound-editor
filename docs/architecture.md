@@ -15,12 +15,12 @@ Parsing, logical hitsound resolution, and the current physical sample-resolution
 Current verified checkpoint:
 
 ```text
-767/767 automated tests passing (full suite, 2026-10-29 via `New-SessionReview.ps1`)
+778/778 automated tests passed, 0 failed, 0 skipped (review: 2026-10-31 02:42:30)
 ```
 
-The audio engine supports decoding, normalized mixing, timeline seek, rendered-position reporting, and relative source delays through `OffsetSampleProvider`. `Beatmap` enumerates chronological discrete hitsound events, and `TimedHitSoundPlaybackCursor` tracks selection progress. `HitSoundPlaybackService` can dispatch discrete events immediately or prequeue a bounded interval before playback using each event's time relative to the interval origin. The prequeue path starts finite looping slider-body layers at included slider heads. `QueuePlaybackInterval(...)` also reconstructs bodies already active at the interval start, preserving sample phase and playing only their remaining duration, with reconstruction results separate from discrete-event results. `FrameScheduledSampleProvider` sits in the WASAPI output path and provides partial absolute-frame scheduling through segmented mixer reads.
+The audio engine supports decoding, normalized mixing, timeline seek, rendered-position reporting, and relative source delays through `OffsetSampleProvider`. `Beatmap` enumerates chronological discrete hitsound events, and `TimedHitSoundPlaybackCursor` tracks selection progress. `HitSoundPlaybackService` can dispatch discrete events immediately or prequeue a bounded interval before playback using each event's time relative to the interval origin. The prequeue path starts finite looping slider-body layers at included slider heads. `QueuePlaybackInterval(...)` also reconstructs bodies already active at the interval start, preserving sample phase and playing only their remaining duration, with reconstruction results separate from discrete-event results. `FrameScheduledSampleProvider` sits in the WASAPI output path and supports absolute-frame scheduling during active playback through segmented mixer reads and `ScheduleAudioSource(...)`.
 
-Prequeueing is verified against mixer frames and timeline audio. The WASAPI connection passed one temporary integration test and audible playback; that test was removed. Absolute-frame scheduling during active playback remains unverified. Active-body reconstruction is implemented for bounded prequeueing; playback-controller coordination, editor UI, export, and optimization remain future work.
+Prequeueing is verified against mixer frames and timeline audio. The 2026-10-31 checkpoint verified absolute-frame scheduling during active playback with three focused WASAPI integration tests and five focused fail-stop cases; temporary hardware-dependent files were removed. These checks do not establish hardware independence or universal concurrency correctness. Active-body reconstruction remains implemented for bounded prequeueing; playback-controller coordination, editor UI, export, and optimization remain future work.
 
 ---
 
@@ -680,17 +680,18 @@ flowchart TD
     P --> Q[AudioPlaybackEngine mixer]
     W[WasapiPlayer] --> V[FrameScheduledSampleProvider]
     V --> Q
-    V -. future .-> R[Active-playback scheduling / editor UI]
+    U[ScheduleAudioSource / absolute timeline event time] --> V
+    Q -. future .-> R[Editor UI]
     C -. future .-> S[Export / optimization]
 ```
 
-The audio path can dispatch selected discrete hitsounds immediately or prequeue discrete events together with slider-body playback triggered at included slider heads and reconstructed bodies already active at the interval start, before the mixer starts consuming audio. Prequeueing converts each absolute event time into a delay relative to one common interval start. `AudioPlaybackEngine.InitializeOutput()` connects `WasapiPlayer` → `FrameScheduledSampleProvider` → `MixingSampleProvider`; the scheduler activates queued sources at absolute frames as WASAPI reads. The dashed branches indicate future active-playback scheduling behavior, editor, export, and optimization functionality.
+The audio path can dispatch selected discrete hitsounds immediately or prequeue discrete events together with slider-body playback triggered at included slider heads and reconstructed bodies already active at the interval start, before the mixer starts consuming audio. Prequeueing converts each absolute event time into a delay relative to one common interval start. `AudioPlaybackEngine.InitializeOutput()` connects `WasapiPlayer` → `FrameScheduledSampleProvider` → `MixingSampleProvider`; the scheduler activates queued sources at absolute frames as WASAPI reads. `ScheduleAudioSource(...)` admits normalized, volume-adjusted sources during active playback using absolute timeline event times. This engine path remains separate from the bounded relative-delay prequeue helpers. The dashed branches indicate future editor, export, and optimization functionality.
 
 ---
 
 ## Current Architectural Boundary
 
-The current implementation reaches discrete hitsound playback, finite slider-body playback, active-body reconstruction, bounded interval prequeueing, and a frame scheduler connected to the production output path without implementing an editor timeline or verified absolute-frame scheduling during active playback.
+The current implementation reaches discrete hitsound playback, finite slider-body playback, active-body reconstruction, bounded interval prequeueing, and verified absolute-frame scheduling during active playback through the production output path. An editor timeline remains pending.
 
 Implemented:
 
@@ -706,6 +707,8 @@ Slider-head event (EdgeIndex = 0) -> PlaySliderBody(...) -> finite looping mixer
 Beatmap -> GetActiveSlidersAt(...) -> QueueActiveSliderBodiesAt(...) -> remaining body playback
 QueuePlaybackInterval(...) -> active-body reconstruction + discrete interval queueing
                            -> separate reconstruction and discrete-event results
+ScheduleAudioSource(filePath, eventTimeMilliseconds, volume) -> normalized source
+    -> frame from event time minus timeline base -> scheduler priority queue
 FrameScheduledSampleProvider.Schedule(source, absoluteFrame) -> priority queue
 FrameScheduledSampleProvider.Read(...) -> segmented mixer reads + event activation
                                      -> FramesRead counts returned complete frames
@@ -716,11 +719,21 @@ WasapiPlayer -> FrameScheduledSampleProvider -> MixingSampleProvider
 
 `QueueTimedHitSoundEventsInRange(...)` selects a chronological interval and computes `event.Time - startMilliseconds`. By default the interval is `(start, end]`, except that a start at zero includes events at zero. An optional `includeStart` includes an event at a positive start boundary, supporting post-seek reconstruction. When an included event is a slider head (`SliderEdge`, `EdgeIndex = 0`), the queue also calls `PlaySliderBody(...)` with the same delay and appends its resolution results to those of the head. Repeats and tails remain discrete-only events. Sources must be queued **before** the mixer advances through the interval; adding them after playback has progressed does not retrospectively align their timestamps. This method alone does not reconstruct the remaining body when an interval begins midway through a slider; `QueuePlaybackInterval(...)` adds that reconstruction through `QueueActiveSliderBodiesAt(...)`.
 
-Focused device tests confirmed pause/resume, pause-seek-requeue-play, and stop/requeue with a loaded timeline. These are integration checks, not permanent device-dependent suite tests. Current `Stop()` has a separate limitation when no timeline audio is loaded.
+Earlier focused device tests confirmed pause/resume, pause-seek-requeue-play, and stop/requeue with a loaded timeline. These remain integration checks separate from the permanent suite. The 2026-10-31 implementation also cancels scheduling and clears transient inputs on `Stop()` without timeline audio.
 
-`FrameScheduledSampleProvider` queues sample providers by absolute frame and insertion order. `Read(...)` splits mixer reads at queued frame boundaries, adds due sources to the mixer, and advances `FramesRead` by complete frames returned. `Read(...)` and `Schedule(...)` share `_scheduleLock`; reentrant scheduling during a read is rejected. An internal read-processing failure faults the scheduler, so later reads and schedules reject it. The 23 initial permanent tests covered standalone frame scheduling; the full suite now has 767 permanent tests. The WASAPI connection passed one temporary integration test and audible playback, then the temporary test was removed. Complete pending/active source ownership, cleanup, and recovery remain open.
+`FrameScheduledSampleProvider` queues sample providers by absolute frame and insertion order. `Read(...)` splits mixer reads at queued frame boundaries, adds due sources to the mixer, and advances `FramesRead` by complete frames returned. `ScheduleAudioSource(...)` requires loaded timeline audio and computes `(long)((eventTimeMilliseconds - timelineBaseMilliseconds) * mixerSampleRate / 1000)`. Event times must be finite, non-negative, at or after the timeline origin, and within the supported frame range. Scheduling during active playback must still target a frame not yet consumed; consumed frames are rejected.
 
-Not verified yet: absolute-frame scheduling while audio is actively advancing, the origin of scheduled frames, coordination with `Seek(...)` and `Stop()`, complete pending/active source management, and recovery after internal failures. Playback-controller coordination of pause and reconstruction, editor timeline/UI, deterministic export/reload/equivalence verification, and sample optimization also remain future work.
+`FramesRead` measures scheduler consumption, not rendered playback. `GetTimelinePositionMilliseconds()` continues to report the timeline base plus WASAPI rendered bytes converted to milliseconds using the output format. Buffered consumption and rendered position remain distinct.
+
+`ResetScheduling()` clears pending events and resets `FramesRead` and insertion order. `Seek(...)` stops output, resets scheduling, removes mixer inputs, releases transient readers, repositions the retained timeline reader, builds a fresh normalized timeline provider, updates the timeline base, and resumes if previously playing. Healthy `Stop()` with loaded timeline audio returns to zero through seek. Without a timeline, or on a faulted scheduler, stop resets scheduling and clears transient inputs without normal timeline reconstruction.
+
+Playback-state operations use `playbackStateLock`. Scheduler reads, scheduling, reset, and fault-state access use `_scheduleLock`; reentrant scheduling/reset during a read is rejected. Mixer input callbacks must not acquire `playbackStateLock`, since playback operations can wait for output/read completion. Reader-map changes use `activeReadersLock`. This synchronization boundary does not establish universal concurrency correctness.
+
+The engine owns readers for both pending and active scheduled sources, retaining them in its reader map until mixer completion or cancellation cleanup. Mixer completion releases transient readers; the timeline reader remains available for future seeks. Scheduling-admission failure removes the registration and disposes its reader. `Dispose()` releases the output device before readers, detaches mixer callbacks, clears inputs, supports repeated calls, and aggregates individual reader-disposal errors while attempting remaining readers. Partial cleanup failures remain a limitation: output-device disposal can interrupt later cleanup, and seek/stop reader-disposal failures do not have the same aggregation behavior.
+
+An internal read-processing failure faults the scheduler and propagates the failure. `IsFaulted` exposes that state for engine-level checks: scheduling, play, seek, timeline-position queries, and source admission reject a known faulted scheduler as applicable. Existing argument validation retains precedence. `ResetScheduling()` does not clear the fault or recover processing; stop can cancel resources without making the scheduler usable again.
+
+The 2026-10-31 checkpoint passed three focused WASAPI scheduling integration tests and five focused fail-stop verification cases; temporary hardware-dependent files were removed. Device runtime errors/recovery, recovery after scheduler failure, remaining partial cleanup failures, playback-controller coordination of pause and reconstruction, editor timeline/UI, deterministic export/reload/equivalence verification, and sample optimization remain pending.
 
 Earlier investigation used 16 temporary diagnostic checks: seven for frame accounting and nine for buffer-boundary scheduling and controlled concurrency. Their files were removed; they are separate from the permanent suite and do not establish concurrency guarantees for `FrameScheduledSampleProvider`.
 
@@ -735,10 +748,11 @@ The project uses **xUnit** for automated testing.
 Current checkpoint:
 
 ```text
-767/767 tests passing (full suite, 2026-10-29 via `New-SessionReview.ps1`)
+778/778 passed, 0 failed, 0 skipped (review: 2026-10-31 02:42:30)
+dotnet test exit code: 0; git diff --check exit code: 0
 ```
 
-Historical milestones remain: 669/669 on 2026-10-14, 681/681 on 2026-10-18, and 741/741 on 2026-10-21. The three active-slider selection and interval-reconstruction methods added 60 permanent cases, bringing the suite from 681 to 741. The initial 23 `FrameScheduledSampleProvider` tests brought it to 764; the current suite has 767. The 16 removed scheduler diagnostics and the removed one-test WASAPI check are separate from this permanent suite.
+Historical milestones remain: 669/669 on 2026-10-14, 681/681 on 2026-10-18, and 741/741 on 2026-10-21. The three active-slider selection and interval-reconstruction methods added 60 permanent cases, bringing the suite from 681 to 741. The initial 23 `FrameScheduledSampleProvider` tests brought it to 764; the 2026-10-29 baseline was 767/767. The final 2026-10-31 suite has 778 permanent cases. The 16 removed scheduler diagnostics, earlier one-test WASAPI check, and three focused WASAPI scheduling tests are separate from the permanent suite; five focused fail-stop verification cases also passed. Temporary hardware-dependent files were removed.
 
 The test suite currently covers:
 
@@ -825,9 +839,9 @@ Deferred until needed: defining a stable logical `SampleId` and loading addition
 
 ### Audio Infrastructure
 
-Implemented: NAudio decoding, output/mixer lifetime, timeline playback and seek, per-source volume, chronological event selection with `TimedHitSoundPlaybackCursor`, relative delayed sample playback, slider-body layers with finite looping, active-body reconstruction with preserved phase and remaining duration, bounded interval prequeueing with separate reconstruction/discrete-event results before the mixer advances, and `FrameScheduledSampleProvider` in the WASAPI output path for absolute-frame activation, serialized reads/schedules, and fail-stop processing. Focused real-device checks covered pause/resume, seek/requeue, stop/requeue, and the scheduler's WASAPI connection.
+Implemented: NAudio decoding, output/mixer lifetime, timeline playback and seek, per-source volume, chronological event selection with `TimedHitSoundPlaybackCursor`, relative delayed sample playback, slider-body layers with finite looping, active-body reconstruction with preserved phase and remaining duration, bounded interval prequeueing with separate reconstruction/discrete-event results before the mixer advances, and `FrameScheduledSampleProvider` in the WASAPI output path for absolute-frame activation, serialized reads/schedules, and fail-stop processing. The 2026-10-31 checkpoint adds active-playback `ScheduleAudioSource(...)`, an explicit frame origin, scheduling reset and seek/stop coordination, reader ownership/cleanup, and engine-level fail-stop checks. Focused real-device checks covered pause/resume, seek/requeue, stop/requeue, the scheduler's WASAPI connection, and active-playback scheduling.
 
-Remaining: verification of absolute-frame scheduling during active playback, the scheduled-frame origin, coordination with `Seek(...)` and `Stop()`, complete ownership/cleanup of pending and active sources, recovery after internal failure, playback-controller coordination, reduced playback speeds and verified `SamplesMatchPlaybackRate` behavior, and editor-timeline integration. NAudio is the selected external audio infrastructure.
+Remaining: device runtime errors/recovery, partial cleanup failures, recovery after internal scheduler failure, playback-controller coordination, reduced playback speeds and verified `SamplesMatchPlaybackRate` behavior, and editor-timeline integration. NAudio is the selected external audio infrastructure.
 
 ### Desktop Editor and Timeline
 
