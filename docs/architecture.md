@@ -15,7 +15,7 @@ Parsing, logical hitsound resolution, and the current physical sample-resolution
 Current verified checkpoint:
 
 ```text
-778/778 automated tests passed, 0 failed, 0 skipped (review: 2026-10-31 02:42:30)
+779/779 automated tests passed, 0 failed, 0 skipped (review: 2026-11-01 00:02:30)
 ```
 
 The audio engine supports decoding, normalized mixing, timeline seek, rendered-position reporting, and relative source delays through `OffsetSampleProvider`. `Beatmap` enumerates chronological discrete hitsound events, and `TimedHitSoundPlaybackCursor` tracks selection progress. `HitSoundPlaybackService` can dispatch discrete events immediately or prequeue a bounded interval before playback using each event's time relative to the interval origin. The prequeue path starts finite looping slider-body layers at included slider heads. `QueuePlaybackInterval(...)` also reconstructs bodies already active at the interval start, preserving sample phase and playing only their remaining duration, with reconstruction results separate from discrete-event results. `FrameScheduledSampleProvider` sits in the WASAPI output path and supports absolute-frame scheduling during active playback through segmented mixer reads and `ScheduleAudioSource(...)`.
@@ -729,7 +729,11 @@ Earlier focused device tests confirmed pause/resume, pause-seek-requeue-play, an
 
 Playback-state operations use `playbackStateLock`. Scheduler reads, scheduling, reset, and fault-state access use `_scheduleLock`; reentrant scheduling/reset during a read is rejected. Mixer input callbacks must not acquire `playbackStateLock`, since playback operations can wait for output/read completion. Reader-map changes use `activeReadersLock`. This synchronization boundary does not establish universal concurrency correctness.
 
-The engine owns readers for both pending and active scheduled sources, retaining them in its reader map until mixer completion or cancellation cleanup. Mixer completion releases transient readers; the timeline reader remains available for future seeks. Scheduling-admission failure removes the registration and disposes its reader. `Dispose()` releases the output device before readers, detaches mixer callbacks, clears inputs, supports repeated calls, and aggregates individual reader-disposal errors while attempting remaining readers. Partial cleanup failures remain a limitation: output-device disposal can interrupt later cleanup, and seek/stop reader-disposal failures do not have the same aggregation behavior.
+The engine owns readers for both pending and active scheduled sources, retaining them in its reader map until mixer completion or cancellation cleanup. On normal mixer completion, the callback removes the transient reader's registration and disposes it; the timeline reader remains available for future seeks. Scheduling-admission failure removes the registration and attempts reader disposal. `Dispose()` attempts output-device disposal before reader cleanup, detaches mixer callbacks, attempts input removal, supports repeated calls, and aggregates output, input-removal, and reader-disposal errors while continuing independent cleanup. A failed disposal attempt does not establish that the resource was fully released.
+
+The partial-cleanup changes verified in the 2026-11-01 session also cover `Seek()`, `Stop()`, `InitializeOutput()`, `LoadTimelineAudio()`, and `AddAudioSource()`. Seek and stop attempt all transient-reader disposals in their cleanup loops and aggregate failures; failures within their post-stop processing blocks trigger engine disposal, preserving the operation error together with a disposal error if both occur. Initialization attempts event unsubscription and device disposal on failure. Timeline loading and source admission preserve preparation/registration errors alongside secondary cleanup errors and attempt engine disposal if mixer rollback fails. These changes do not establish coverage of every exceptional path.
+
+P02 — cleanup and scheduler recovery — remains incomplete. The next task is `OnMixerInputEnded()`: it currently removes a transient reader from the map before disposal, so a disposal failure leaves ownership tracking unresolved inside the mixer callback. Bounded corrections in `ScheduleAudioSource()` and `AddLoopingAudioSource()` also remain pending. Recovery after scheduler failure is not implemented or decided; recreating the complete engine is only a proposal.
 
 An internal read-processing failure faults the scheduler and propagates the failure. `IsFaulted` exposes that state for engine-level checks: scheduling, play, seek, timeline-position queries, and source admission reject a known faulted scheduler as applicable. Existing argument validation retains precedence. `ResetScheduling()` does not clear the fault or recover processing; stop can cancel resources without making the scheduler usable again.
 
@@ -748,11 +752,13 @@ The project uses **xUnit** for automated testing.
 Current checkpoint:
 
 ```text
-778/778 passed, 0 failed, 0 skipped (review: 2026-10-31 02:42:30)
-dotnet test exit code: 0; git diff --check exit code: 0
+779/779 passed, 0 failed, 0 skipped (review: 2026-11-01 00:02:30)
+dotnet test exit code: 0
 ```
 
-Historical milestones remain: 669/669 on 2026-10-14, 681/681 on 2026-10-18, and 741/741 on 2026-10-21. The three active-slider selection and interval-reconstruction methods added 60 permanent cases, bringing the suite from 681 to 741. The initial 23 `FrameScheduledSampleProvider` tests brought it to 764; the 2026-10-29 baseline was 767/767. The final 2026-10-31 suite has 778 permanent cases. The 16 removed scheduler diagnostics, earlier one-test WASAPI check, and three focused WASAPI scheduling tests are separate from the permanent suite; five focused fail-stop verification cases also passed. Temporary hardware-dependent files were removed.
+The `New-SessionReview.ps1` report records this checkpoint. Only trailing whitespace and a local-variable name typo were corrected afterward; the user then ran `git diff --check` without warnings. The full suite was not rerun after those corrections.
+
+Historical milestones remain: 669/669 on 2026-10-14, 681/681 on 2026-10-18, and 741/741 on 2026-10-21. The three active-slider selection and interval-reconstruction methods added 60 permanent cases, bringing the suite from 681 to 741. The initial 23 `FrameScheduledSampleProvider` tests brought it to 764; the 2026-10-29 baseline was 767/767. The final 2026-10-31 suite had 778 permanent cases. One permanent multiple-reader disposal-failure test brought the suite to 779 for the 2026-11-01 report. Two temporary WASAPI tests for seek/stop failure paths also passed (2/2) and were removed. The 16 removed scheduler diagnostics, earlier one-test WASAPI check, and three focused WASAPI scheduling tests are separate from the permanent suite; five focused fail-stop verification cases also passed. Temporary hardware-dependent files were removed. These checks do not cover all exceptional paths.
 
 The test suite currently covers:
 
@@ -791,6 +797,7 @@ hit-circle cursor advancement and seeking
 chronological TimedHitSoundEvent generation and playback dispatch
 unified TimedHitSoundPlaybackCursor advancement/seek
 relative delayed playback and mixer-reader cleanup
+continued engine disposal and exception aggregation when multiple readers fail disposal
 finite looping sample playback, duration cutoff, volume, delays, and reader cleanup
 source-offset validation and frame-aligned loop phase with wraparound and finite cutoff
 prequeued interval playback, inclusive boundaries, and overlapping hitsounds
@@ -841,7 +848,9 @@ Deferred until needed: defining a stable logical `SampleId` and loading addition
 
 Implemented: NAudio decoding, output/mixer lifetime, timeline playback and seek, per-source volume, chronological event selection with `TimedHitSoundPlaybackCursor`, relative delayed sample playback, slider-body layers with finite looping, active-body reconstruction with preserved phase and remaining duration, bounded interval prequeueing with separate reconstruction/discrete-event results before the mixer advances, and `FrameScheduledSampleProvider` in the WASAPI output path for absolute-frame activation, serialized reads/schedules, and fail-stop processing. The 2026-10-31 checkpoint adds active-playback `ScheduleAudioSource(...)`, an explicit frame origin, scheduling reset and seek/stop coordination, reader ownership/cleanup, and engine-level fail-stop checks. Focused real-device checks covered pause/resume, seek/requeue, stop/requeue, the scheduler's WASAPI connection, and active-playback scheduling.
 
-Remaining: device runtime errors/recovery, partial cleanup failures, recovery after internal scheduler failure, playback-controller coordination, reduced playback speeds and verified `SamplesMatchPlaybackRate` behavior, and editor-timeline integration. NAudio is the selected external audio infrastructure.
+The 2026-11-01 partial-cleanup checkpoint improves error handling in six engine methods and adds permanent coverage for multiple-reader disposal failures. P02 remains incomplete: `OnMixerInputEnded()` ownership on disposal failure is next, followed by bounded corrections in `ScheduleAudioSource()` and `AddLoopingAudioSource()` and a definition of scheduler recovery.
+
+Remaining: device runtime errors/recovery, remaining partial cleanup failures, recovery after internal scheduler failure, playback-controller coordination, reduced playback speeds and verified `SamplesMatchPlaybackRate` behavior, and editor-timeline integration. NAudio is the selected external audio infrastructure.
 
 ### Desktop Editor and Timeline
 

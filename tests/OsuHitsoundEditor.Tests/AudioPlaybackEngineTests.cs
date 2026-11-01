@@ -1217,6 +1217,7 @@ public class AudioPlaybackEngineTests
             nameof(AudioPlaybackEngine),
             exception.ObjectName);
     }
+
     [Theory]
     [InlineData(nameof(AudioPlaybackEngine.LoadTimelineAudio))]
     [InlineData(nameof(AudioPlaybackEngine.AddAudioSource))]
@@ -1276,4 +1277,51 @@ public class AudioPlaybackEngineTests
             exception.Message);
     }
 
+    [Fact]
+    public void Dispose_WhenMultipleReaderDisposalsFail_ContinuesCleanupAndAggregatesErrors()
+    {
+        AudioPlaybackEngine engine = new();
+
+        FieldInfo? timelineField = typeof(AudioPlaybackEngine).GetField(
+            "timelineReader",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        FieldInfo? readersField = typeof(AudioPlaybackEngine).GetField(
+            "activeReaders",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(timelineField);
+        Assert.NotNull(readersField);
+
+        TrackingWaveStream failingTimelineReader = new(throwOnDispose: true);
+        TrackingWaveStream failingActiveReader = new(throwOnDispose: true);
+        TrackingWaveStream workingActiveReader = new();
+
+        timelineField.SetValue(engine, failingTimelineReader);
+
+        Dictionary<ISampleProvider, WaveStream> readers =
+            Assert.IsType<Dictionary<ISampleProvider, WaveStream>>(
+                readersField.GetValue(engine));
+
+        readers.Add(new SignalGenerator(44100, 2), failingActiveReader);
+        readers.Add(new SignalGenerator(44100, 2), workingActiveReader);
+
+        AggregateException exception =
+            Assert.Throws<AggregateException>(() => engine.Dispose());
+
+        Assert.Equal(2, exception.InnerExceptions.Count);
+
+        Assert.All(
+            exception.InnerExceptions,
+            error => Assert.IsType<IOException>(error));
+
+        Assert.True(failingTimelineReader.WasDisposed);
+        Assert.True(failingActiveReader.WasDisposed);
+        Assert.True(workingActiveReader.WasDisposed);
+
+        Assert.Null(timelineField.GetValue(engine));
+        Assert.Empty(readers);
+
+        Assert.Null(Record.Exception(() => engine.Dispose()));
+    }
 }

@@ -54,14 +54,39 @@ public class AudioPlaybackEngine : IDisposable
                 mixer = currentMixer;
                 frameScheduler = currentScheduler;
             }
-            catch
+            catch (Exception initializationError)
             {
+                List<Exception> cleanupErrors = new();
                 if (currentMixer != null)
                 {
-                    currentMixer.MixerInputEnded -= OnMixerInputEnded;
+                    try
+                    {
+                        currentMixer.MixerInputEnded -= OnMixerInputEnded;
+                    }
+                    catch (Exception exception)
+                    {
+                        cleanupErrors.Add(exception);
+                    }
                 }
 
-                device.Dispose();
+                try
+                {
+                    device.Dispose();
+                }
+                catch (Exception exception)
+                {
+                    cleanupErrors.Add(exception);
+                }
+
+                if (cleanupErrors.Count > 0)
+                {
+                    List<Exception> allErrors = new() { initializationError };
+                    allErrors.AddRange(cleanupErrors);
+                    throw new AggregateException(
+                        "Audio output initialization failed, and cleanup also failed.",
+                        allErrors);
+                }
+
                 throw;
             }
         }
@@ -131,22 +156,57 @@ public class AudioPlaybackEngine : IDisposable
             MixingSampleProvider currentMixer = mixer
                                                 ?? throw new InvalidOperationException(
                                                     "The audio output has not been initialized.");
-            currentScheduler.ResetScheduling();
-            currentMixer.RemoveAllMixerInputs();
-            timelineProvider = null;
-            List<WaveStream> readersToDispose = new List<WaveStream>();
-            lock (activeReadersLock)
+            try
             {
-                readersToDispose.AddRange(activeReaders.Values);
-                activeReaders.Clear();
-            }
+                currentScheduler.ResetScheduling();
+                currentMixer.RemoveAllMixerInputs();
+                timelineProvider = null;
+                List<WaveStream> readersToDispose = new List<WaveStream>();
+                lock (activeReadersLock)
+                {
+                    readersToDispose.AddRange(activeReaders.Values);
+                    activeReaders.Clear();
+                }
 
-            foreach (var reader in readersToDispose)
+                List<Exception> cleanupErrors = new();
+
+                foreach (var reader in readersToDispose)
+                {
+                    try
+                    {
+                        reader.Dispose();
+                    }
+                    catch (Exception exception)
+                    {
+                        cleanupErrors.Add(exception);
+                    }
+                }
+
+                if (cleanupErrors.Count > 0)
+                {
+                    throw new AggregateException(
+                        "One or more audio resources could not be released during stopping.",
+                        cleanupErrors);
+                }
+
+                timelineBaseMilliseconds = 0;
+            }
+            catch (Exception operationError)
             {
-                reader.Dispose();
-            }
+                try
+                {
+                    Dispose();
+                }
+                catch (Exception disposalError)
+                {
+                    throw new AggregateException(
+                        "The audio stop failed, and engine cleanup also failed.",
+                        operationError,
+                        disposalError);
+                }
 
-            timelineBaseMilliseconds = 0;
+                throw;
+            }
         }
     }
 
@@ -187,35 +247,69 @@ public class AudioPlaybackEngine : IDisposable
 
             bool wasPlaying = device.PlaybackState == PlaybackState.Playing;
             device.Stop();
-            if (currentScheduler.IsFaulted)
+            try
             {
-                throw new InvalidOperationException(
-                    "The frame scheduler is faulted and cannot be used.");
-            }
+                if (currentScheduler.IsFaulted)
+                {
+                    throw new InvalidOperationException(
+                        "The frame scheduler is faulted and cannot be used.");
+                }
 
-            currentScheduler.ResetScheduling();
-            mixer.RemoveAllMixerInputs();
-            timelineProvider = null;
-            List<WaveStream> readersToDispose = new List<WaveStream>();
-            lock (activeReadersLock)
-            {
-                readersToDispose.AddRange(activeReaders.Values);
-                activeReaders.Clear();
-            }
+                currentScheduler.ResetScheduling();
+                mixer.RemoveAllMixerInputs();
+                timelineProvider = null;
+                List<WaveStream> readersToDispose = new List<WaveStream>();
+                lock (activeReadersLock)
+                {
+                    readersToDispose.AddRange(activeReaders.Values);
+                    activeReaders.Clear();
+                }
 
-            foreach (var reader in readersToDispose)
-            {
-                reader.Dispose();
-            }
+                List<Exception> cleanupErrors = new();
+                foreach (var reader in readersToDispose)
+                {
+                    try
+                    {
+                        reader.Dispose();
+                    }
+                    catch (Exception exception)
+                    {
+                        cleanupErrors.Add(exception);
+                    }
+                }
 
-            timelineReader.CurrentTime = TimeSpan.FromMilliseconds(timeMilliseconds);
-            ISampleProvider provider = NormalizeForMixer(timelineReader, mixer.WaveFormat.SampleRate);
-            mixer.AddMixerInput(provider);
-            timelineProvider = provider;
-            timelineBaseMilliseconds = timeMilliseconds;
-            if (wasPlaying)
+                if (cleanupErrors.Count > 0)
+                {
+                    throw new AggregateException(
+                        "One or more audio resources could not be released during seeking.",
+                        cleanupErrors);
+                }
+
+                timelineReader.CurrentTime = TimeSpan.FromMilliseconds(timeMilliseconds);
+                ISampleProvider provider = NormalizeForMixer(timelineReader, mixer.WaveFormat.SampleRate);
+                mixer.AddMixerInput(provider);
+                timelineProvider = provider;
+                timelineBaseMilliseconds = timeMilliseconds;
+                if (wasPlaying)
+                {
+                    device.Play();
+                }
+            }
+            catch (Exception operationError)
             {
-                device.Play();
+                try
+                {
+                    Dispose();
+                }
+                catch (Exception disposalError)
+                {
+                    throw new AggregateException(
+                        "The audio seek failed, and engine cleanup also failed.",
+                        operationError,
+                        disposalError);
+                }
+
+                throw;
             }
         }
     }
@@ -283,9 +377,20 @@ public class AudioPlaybackEngine : IDisposable
             {
                 provider = NormalizeForMixer(reader, currentMixer.WaveFormat.SampleRate);
             }
-            catch
+            catch (Exception normalizationError)
             {
-                reader.Dispose();
+                try
+                {
+                    reader.Dispose();
+                }
+                catch (Exception cleanupError)
+                {
+                    throw new AggregateException(
+                        "Audio normalization failed, and reader cleanup also failed.",
+                        normalizationError,
+                        cleanupError);
+                }
+
                 throw;
             }
 
@@ -295,12 +400,54 @@ public class AudioPlaybackEngine : IDisposable
             {
                 currentMixer.AddMixerInput(provider);
             }
-            catch
+            catch (Exception registrationError)
             {
-                currentMixer.RemoveMixerInput(provider);
+                List<Exception> errors = new() { registrationError };
+                bool mixerRollbackCompleted = false;
+                try
+                {
+                    currentMixer.RemoveMixerInput(provider);
+                    mixerRollbackCompleted = true;
+                }
+                catch (Exception removalError)
+                {
+                    errors.Add(removalError);
+                }
+
+                if (mixerRollbackCompleted == false)
+                {
+                    try
+                    {
+                        Dispose();
+                    }
+                    catch (Exception disposalError)
+                    {
+                        errors.Add(disposalError);
+                    }
+
+                    throw new AggregateException(
+                        "Timeline audio registration failed, and mixer rollback failed.",
+                        errors);
+                }
+
                 timelineProvider = null;
                 timelineReader = null;
-                reader.Dispose();
+                try
+                {
+                    reader.Dispose();
+                }
+                catch (Exception cleanupError)
+                {
+                    errors.Add(cleanupError);
+                }
+
+                if (errors.Count > 1)
+                {
+                    throw new AggregateException(
+                        "Timeline audio registration failed, and reader cleanup also failed.",
+                        errors);
+                }
+
                 throw;
             }
         }
@@ -373,9 +520,20 @@ public class AudioPlaybackEngine : IDisposable
                     mixerInput = delayProvider;
                 }
             }
-            catch
+            catch (Exception preparationError)
             {
-                reader.Dispose();
+                try
+                {
+                    reader.Dispose();
+                }
+                catch (Exception cleanupError)
+                {
+                    throw new AggregateException(
+                        "Audio source preparation failed, and reader cleanup also failed.",
+                        preparationError,
+                        cleanupError);
+                }
+
                 throw;
             }
 
@@ -388,9 +546,33 @@ public class AudioPlaybackEngine : IDisposable
             {
                 currentMixer.AddMixerInput(mixerInput);
             }
-            catch
+            catch (Exception registrationError)
             {
-                currentMixer.RemoveMixerInput(mixerInput);
+                try
+                {
+                    currentMixer.RemoveMixerInput(mixerInput);
+                }
+                catch (Exception removalError)
+                {
+                    try
+                    {
+                        Dispose();
+                    }
+                    catch (Exception disposalError)
+                    {
+                        throw new AggregateException(
+                            "Audio source registration, mixer rollback, and engine cleanup failed.",
+                            registrationError,
+                            removalError,
+                            disposalError);
+                    }
+
+                    throw new AggregateException(
+                        "Audio source registration failed, and mixer rollback also failed.",
+                        registrationError,
+                        removalError);
+                }
+
                 WaveStream? readerToDispose = null;
                 lock (activeReadersLock)
                 {
@@ -399,7 +581,17 @@ public class AudioPlaybackEngine : IDisposable
 
                 if (readerToDispose != null)
                 {
-                    readerToDispose.Dispose();
+                    try
+                    {
+                        readerToDispose.Dispose();
+                    }
+                    catch (Exception cleanupError)
+                    {
+                        throw new AggregateException(
+                            "Audio source registration failed, and reader cleanup also failed.",
+                            registrationError,
+                            cleanupError);
+                    }
                 }
 
                 throw;
@@ -749,8 +941,16 @@ public class AudioPlaybackEngine : IDisposable
             MixingSampleProvider? currentMixer = mixer;
             if (outputDevice != null)
             {
-                outputDevice.Dispose();
+                WasapiPlayer device = outputDevice;
                 outputDevice = null;
+                try
+                {
+                    device.Dispose();
+                }
+                catch (Exception exception)
+                {
+                    disposalErrors.Add(exception);
+                }
             }
 
             if (timelineReader != null)
@@ -772,7 +972,14 @@ public class AudioPlaybackEngine : IDisposable
             if (currentMixer != null)
             {
                 currentMixer.MixerInputEnded -= OnMixerInputEnded;
-                currentMixer.RemoveAllMixerInputs();
+                try
+                {
+                    currentMixer.RemoveAllMixerInputs();
+                }
+                catch (Exception exception)
+                {
+                    disposalErrors.Add(exception);
+                }
             }
 
             List<WaveStream> readersToDispose = new List<WaveStream>();
