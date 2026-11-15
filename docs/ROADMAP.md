@@ -138,7 +138,7 @@ These deferred items do not block Audio Infrastructure and should not be introdu
 
 **Status: IN PROGRESS**
 
-Current full-suite checkpoint: **779/779 passed, 0 failed, 0 skipped** (`New-SessionReview.ps1` report: 2026-11-01 00:02:30; `dotnet test` exit code 0). Only trailing whitespace and a local-variable name typo were corrected afterward; the user then ran `git diff --check` without warnings. The full suite was not rerun after those corrections. The previous checkpoint was 778/778 on 2026-10-31 02:42:30; the baseline was 767/767 permanent tests on 2026-10-29, following 741/741 on 2026-10-21.
+Current full-suite checkpoint: **782/782 passed, 0 failed, 0 skipped** (`New-SessionReview.ps1` report generated 2026-11-14 19:49:40; suite exit code 0). `git diff --check` reported no issues. The checkpoint includes corrections in `AudioPlaybackEngine.cs` and three new permanent tests in `AudioPlaybackEngineTests.cs`. The previous checkpoint was 779/779 on 2026-11-01 00:02:30; earlier milestones were 778/778 on 2026-10-31, 767/767 on 2026-10-29, and 741/741 on 2026-10-21.
 
 Selected infrastructure:
 
@@ -272,15 +272,24 @@ Partial cleanup checkpoint (2026-11-01):
 - [x] Pass two temporary WASAPI tests for `Seek()` and `Stop()` failure paths (2/2); remove those tests after verification
 - [x] Record 779/779 permanent tests passing in the 2026-11-01 00:02:30 session-review report
 
-P02 — cleanup and scheduler recovery — remains incomplete. These checks do not cover every exceptional path. The next concrete task is to review and correct `OnMixerInputEnded()`, especially ownership of a `WaveStream` when disposal fails inside the mixer callback. The audit also identified bounded corrections pending in `ScheduleAudioSource()` and `AddLoopingAudioSource()`. Recovery after `FrameScheduledSampleProvider.IsFaulted` remains undefined; recreating the complete engine is a proposal, not an approved decision or implemented feature. `ResetScheduling()` does not recover a faulted scheduler.
+P02 cleanup and fail-stop checkpoint (2026-11-14):
+
+- [x] Keep the `WaveStream` registered in `OnMixerInputEnded()` until disposal succeeds
+- [x] Preserve preparation/scheduling errors in `ScheduleAudioSource()` and aggregate secondary cleanup errors
+- [x] Preserve original errors, roll back mixer registration, and coordinate reader cleanup with `activeReadersLock` in `AddLoopingAudioSource()`
+- [x] Add three permanent tests covering callback disposal failure, looping registration rollback, and callback-failure integration with scheduler fail-stop; full suite 782/782 passing
+- [x] Resolve P02's technical cleanup and fail-stop scope; retain the faulted scheduler's terminal state and defer operational recovery to the future engine-owning playback controller (D032)
+
+The independent Codex audit found no demonstrable blocking defects within the reviewed scope, while noting coverage limits. The new integration test covers the callback-to-scheduler failure transition; not every exceptional path is covered. A faulted `FrameScheduledSampleProvider` must not be reused, and `ResetScheduling()` does not recover it. Complete operational recovery is neither implemented nor verified. Audio Infrastructure remains in progress.
 
 Next:
 
-- [ ] Complete P02: address `OnMixerInputEnded()` reader ownership on disposal failure, bounded corrections in `ScheduleAudioSource()` and `AddLoopingAudioSource()`, and define recovery after internal scheduler failures
 - [ ] Support reduced playback speeds and define/verify `SamplesMatchPlaybackRate` behavior; implementation and technical decisions remain open
 - [ ] Coordinate seek, pause, stop, and queue reconstruction in the eventual playback controller
 - [ ] Connect the rendered-position timeline clock to the eventual editor timeline/UI
 - [ ] Handle device errors and runtime recovery beyond partial-initialization cleanup
+
+Deferred requirement for the future playback controller: before completing editor playback integration, implement and verify fault detection, disposal of the previous engine, creation of a new engine, audio reconstruction, and cleanup-error handling. NAudio 3.1.0 reports playback-thread errors through `PlaybackStopped`, so `PlaybackState` alone is insufficient after an exception (D032).
 
 Deferred maintenance candidates (review only when relevant; not blocking current work):
 

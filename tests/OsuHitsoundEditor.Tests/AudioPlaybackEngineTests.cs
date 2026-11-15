@@ -1,7 +1,6 @@
-using NAudio.Wave;
 using System.Reflection;
+using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using OsuHitsoundEditor;
 
 namespace OsuHitsoundEditor.Tests;
 
@@ -12,11 +11,11 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.wav");
 
-        FileNotFoundException exception =
+        var exception =
             Assert.Throws<FileNotFoundException>(() => engine.OpenAudioFile(path));
 
         Assert.Equal(
@@ -33,7 +32,7 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.txt");
 
@@ -41,7 +40,7 @@ public class AudioPlaybackEngineTests
 
         try
         {
-            NotSupportedException exception =
+            var exception =
                 Assert.Throws<NotSupportedException>(() => engine.OpenAudioFile(path));
 
             Assert.Equal(
@@ -59,7 +58,7 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.wav");
 
@@ -72,7 +71,7 @@ public class AudioPlaybackEngineTests
         using (var writer =
                new WaveFileWriter(path, format))
         {
-            byte[] silence =
+            var silence =
                 new byte[format.AverageBytesPerSecond / 10];
 
             writer.Write(
@@ -83,7 +82,7 @@ public class AudioPlaybackEngineTests
 
         try
         {
-            using WaveStream reader =
+            using var reader =
                 engine.OpenAudioFile(path);
 
             Assert.IsType<AudioFileReader>(reader);
@@ -105,7 +104,7 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.wav");
 
@@ -116,7 +115,7 @@ public class AudioPlaybackEngineTests
 
         using (var writer = new WaveFileWriter(path, format))
         {
-            byte[] audio = new byte[format.BlockAlign * 10];
+            var audio = new byte[format.BlockAlign * 10];
             writer.Write(audio, 0, audio.Length);
         }
 
@@ -124,7 +123,7 @@ public class AudioPlaybackEngineTests
         {
             using var reader = new WaveFileReader(path);
 
-            ISampleProvider provider =
+            var provider =
                 engine.NormalizeForMixer(reader, 44100);
 
             Assert.Equal(2, provider.WaveFormat.Channels);
@@ -141,7 +140,7 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.wav");
 
@@ -152,7 +151,7 @@ public class AudioPlaybackEngineTests
 
         using (var writer = new WaveFileWriter(path, format))
         {
-            byte[] audio = new byte[format.BlockAlign * 10];
+            var audio = new byte[format.BlockAlign * 10];
             writer.Write(audio, 0, audio.Length);
         }
 
@@ -160,7 +159,7 @@ public class AudioPlaybackEngineTests
         {
             using var reader = new WaveFileReader(path);
 
-            ISampleProvider provider =
+            var provider =
                 engine.NormalizeForMixer(reader, 44100);
 
             Assert.Equal(2, provider.WaveFormat.Channels);
@@ -177,7 +176,7 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.wav");
 
@@ -188,7 +187,7 @@ public class AudioPlaybackEngineTests
 
         using (var writer = new WaveFileWriter(path, format))
         {
-            byte[] audio = new byte[format.BlockAlign * 10];
+            var audio = new byte[format.BlockAlign * 10];
             writer.Write(audio, 0, audio.Length);
         }
 
@@ -196,7 +195,7 @@ public class AudioPlaybackEngineTests
         {
             using var reader = new WaveFileReader(path);
 
-            ISampleProvider provider =
+            var provider =
                 engine.NormalizeForMixer(reader, 44100);
 
             Assert.Equal(2, provider.WaveFormat.Channels);
@@ -213,7 +212,7 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.wav");
 
@@ -224,7 +223,7 @@ public class AudioPlaybackEngineTests
 
         using (var writer = new WaveFileWriter(path, format))
         {
-            byte[] audio = new byte[format.BlockAlign * 10];
+            var audio = new byte[format.BlockAlign * 10];
             writer.Write(audio, 0, audio.Length);
         }
 
@@ -232,7 +231,7 @@ public class AudioPlaybackEngineTests
         {
             using var reader = new WaveFileReader(path);
 
-            ISampleProvider provider =
+            var provider =
                 engine.NormalizeForMixer(reader, 48000);
 
             Assert.Equal(2, provider.WaveFormat.Channels);
@@ -249,7 +248,7 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        InvalidOperationException exception =
+        var exception =
             Assert.Throws<InvalidOperationException>(() => engine.Play());
 
         Assert.Equal(
@@ -262,7 +261,7 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        InvalidOperationException exception =
+        var exception =
             Assert.Throws<InvalidOperationException>(() => engine.Pause());
 
         Assert.Equal(
@@ -275,7 +274,7 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        InvalidOperationException exception =
+        var exception =
             Assert.Throws<InvalidOperationException>(() => engine.Stop());
 
         Assert.Equal(
@@ -288,7 +287,7 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        InvalidOperationException exception =
+        var exception =
             Assert.Throws<InvalidOperationException>(() => engine.AddAudioSource("audio.wav"));
 
         Assert.Equal(
@@ -301,7 +300,7 @@ public class AudioPlaybackEngineTests
     {
         var engine = new AudioPlaybackEngine();
 
-        InvalidOperationException exception =
+        var exception =
             Assert.Throws<InvalidOperationException>(() => engine.LoadTimelineAudio("audio.wav"));
 
         Assert.Equal(
@@ -314,7 +313,7 @@ public class AudioPlaybackEngineTests
     {
         using var engine = new AudioPlaybackEngine();
 
-        InvalidOperationException exception =
+        var exception =
             Assert.Throws<InvalidOperationException>(() => engine.Seek(1000));
 
         Assert.Equal(
@@ -327,7 +326,7 @@ public class AudioPlaybackEngineTests
     {
         using var engine = new AudioPlaybackEngine();
 
-        InvalidOperationException exception =
+        var exception =
             Assert.Throws<InvalidOperationException>(() => engine.GetTimelinePositionMilliseconds());
 
         Assert.Equal(
@@ -343,7 +342,7 @@ public class AudioPlaybackEngineTests
     {
         using var engine = new AudioPlaybackEngine();
 
-        ArgumentOutOfRangeException exception =
+        var exception =
             Assert.Throws<ArgumentOutOfRangeException>(() => engine.AddAudioSource("audio.wav", volume));
 
         Assert.Equal("volume", exception.ParamName);
@@ -362,7 +361,7 @@ public class AudioPlaybackEngineTests
         int volume,
         float expectedSample)
     {
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.wav");
 
@@ -370,9 +369,9 @@ public class AudioPlaybackEngineTests
 
         using (var writer = new WaveFileWriter(path, format))
         {
-            byte[] audio = new byte[format.BlockAlign * 100];
+            var audio = new byte[format.BlockAlign * 100];
 
-            for (int i = 0; i < audio.Length; i += 2)
+            for (var i = 0; i < audio.Length; i += 2)
             {
                 audio[i] = 0;
                 audio[i + 1] = 64;
@@ -388,7 +387,7 @@ public class AudioPlaybackEngineTests
             var mixer = new MixingSampleProvider(
                 WaveFormat.CreateIeeeFloatWaveFormat(44100, 2));
 
-            FieldInfo? mixerField =
+            var mixerField =
                 typeof(AudioPlaybackEngine).GetField(
                     "mixer",
                     BindingFlags.Instance | BindingFlags.NonPublic);
@@ -399,9 +398,9 @@ public class AudioPlaybackEngineTests
 
             engine.AddAudioSource(path, volume);
 
-            float[] output = new float[2];
+            var output = new float[2];
 
-            int samplesRead =
+            var samplesRead =
                 mixer.Read(output.AsSpan());
 
             Assert.Equal(2, samplesRead);
@@ -437,13 +436,13 @@ public class AudioPlaybackEngineTests
 
             var format = new WaveFormat(44100, 16, 1);
 
-            foreach (string path in paths)
+            foreach (var path in paths)
             {
                 using var writer = new WaveFileWriter(path, format);
 
-                byte[] audio = new byte[format.BlockAlign * 100];
+                var audio = new byte[format.BlockAlign * 100];
 
-                for (int i = 0; i < audio.Length; i += 2)
+                for (var i = 0; i < audio.Length; i += 2)
                 {
                     audio[i] = 0;
                     audio[i + 1] = 64;
@@ -455,7 +454,7 @@ public class AudioPlaybackEngineTests
             var mixer = new MixingSampleProvider(
                 WaveFormat.CreateIeeeFloatWaveFormat(44100, 2));
 
-            FieldInfo? mixerField =
+            var mixerField =
                 typeof(AudioPlaybackEngine).GetField(
                     "mixer",
                     BindingFlags.Instance | BindingFlags.NonPublic);
@@ -466,9 +465,9 @@ public class AudioPlaybackEngineTests
             engine.AddAudioSource(paths[0], 50);
             engine.AddAudioSource(paths[1], 50);
 
-            float[] output = new float[2];
+            var output = new float[2];
 
-            int samplesRead = mixer.Read(output.AsSpan());
+            var samplesRead = mixer.Read(output.AsSpan());
 
             Assert.Equal(2, samplesRead);
 
@@ -477,10 +476,7 @@ public class AudioPlaybackEngineTests
         }
         finally
         {
-            foreach (string path in paths)
-            {
-                File.Delete(path);
-            }
+            foreach (var path in paths) File.Delete(path);
         }
     }
 
@@ -494,7 +490,7 @@ public class AudioPlaybackEngineTests
     {
         using var engine = new AudioPlaybackEngine();
 
-        ArgumentOutOfRangeException exception =
+        var exception =
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 engine.AddAudioSource(
                     "audio.wav", 100, invalidDelay));
@@ -516,7 +512,7 @@ public class AudioPlaybackEngineTests
         var mixer = new MixingSampleProvider(
             WaveFormat.CreateIeeeFloatWaveFormat(44100, 2));
 
-        FieldInfo? mixerField =
+        var mixerField =
             typeof(AudioPlaybackEngine).GetField(
                 "mixer",
                 BindingFlags.Instance | BindingFlags.NonPublic);
@@ -524,7 +520,7 @@ public class AudioPlaybackEngineTests
         Assert.NotNull(mixerField);
         mixerField.SetValue(engine, mixer);
 
-        ArgumentOutOfRangeException exception =
+        var exception =
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 engine.AddAudioSource(
                     "nonexistent-audio.wav", 100, invalidDelay));
@@ -538,7 +534,7 @@ public class AudioPlaybackEngineTests
     [Fact]
     public void AddAudioSource_WhenDelayIsApplied_MixesAndReleasesDelayedSource()
     {
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.wav");
 
@@ -548,9 +544,9 @@ public class AudioPlaybackEngineTests
 
             using (var writer = new WaveFileWriter(path, format))
             {
-                byte[] audio = new byte[format.BlockAlign * 100];
+                var audio = new byte[format.BlockAlign * 100];
 
-                for (int i = 0; i < audio.Length; i += 2)
+                for (var i = 0; i < audio.Length; i += 2)
                 {
                     audio[i] = 0;
                     audio[i + 1] = 64;
@@ -567,21 +563,21 @@ public class AudioPlaybackEngineTests
                 ReadFully = true
             };
 
-            FieldInfo? mixerField =
+            var mixerField =
                 typeof(AudioPlaybackEngine).GetField(
                     "mixer",
                     BindingFlags.Instance | BindingFlags.NonPublic);
 
             Assert.NotNull(mixerField);
             mixerField.SetValue(engine, mixer);
-            MethodInfo? handlerMethod =
+            var handlerMethod =
                 typeof(AudioPlaybackEngine).GetMethod(
                     "OnMixerInputEnded",
                     BindingFlags.Instance | BindingFlags.NonPublic);
 
             Assert.NotNull(handlerMethod);
 
-            EventHandler<SampleProviderEventArgs> handler =
+            var handler =
                 (EventHandler<SampleProviderEventArgs>)Delegate.CreateDelegate(
                     typeof(EventHandler<SampleProviderEventArgs>),
                     engine,
@@ -589,7 +585,7 @@ public class AudioPlaybackEngineTests
 
             mixer.MixerInputEnded += handler;
 
-            FieldInfo? readersField =
+            var readersField =
                 typeof(AudioPlaybackEngine).GetField(
                     "activeReaders",
                     BindingFlags.Instance | BindingFlags.NonPublic);
@@ -601,20 +597,20 @@ public class AudioPlaybackEngineTests
                     readersField.GetValue(engine));
 
             // Two independent readers for the same physical file.
-            engine.AddAudioSource(path, volume: 50);
+            engine.AddAudioSource(path, 50);
 
             engine.AddAudioSource(
                 path,
-                volume: 50,
-                delayMilliseconds: 1);
+                50,
+                1);
 
             Assert.Equal(2, activeReaders.Count);
 
             // 1 ms at 44100 Hz is truncated to 44 frames.
             // Each audio source contains 100 frames.
-            float[] output = new float[144 * 2];
+            var output = new float[144 * 2];
 
-            int samplesRead = mixer.Read(output.AsSpan());
+            var samplesRead = mixer.Read(output.AsSpan());
 
             Assert.Equal(output.Length, samplesRead);
 
@@ -634,7 +630,7 @@ public class AudioPlaybackEngineTests
             Assert.Equal(output[44 * 2], output[44 * 2 + 1]);
 
             // Trigger end-of-input cleanup for the delayed provider.
-            float[] remaining = new float[2];
+            var remaining = new float[2];
             mixer.Read(remaining.AsSpan());
 
             Assert.Empty(activeReaders);
@@ -653,7 +649,7 @@ public class AudioPlaybackEngineTests
     {
         using AudioPlaybackEngine engine = new();
 
-        ArgumentOutOfRangeException exception =
+        var exception =
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 engine.AddLoopingAudioSource("audio.wav", 100, volume));
 
@@ -672,7 +668,7 @@ public class AudioPlaybackEngineTests
     {
         using AudioPlaybackEngine engine = new();
 
-        ArgumentOutOfRangeException exception =
+        var exception =
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 engine.AddLoopingAudioSource("audio.wav", durationMilliseconds));
 
@@ -692,7 +688,7 @@ public class AudioPlaybackEngineTests
     {
         using AudioPlaybackEngine engine = new();
 
-        ArgumentOutOfRangeException exception =
+        var exception =
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 engine.AddLoopingAudioSource(
                     "audio.wav", 100, 100, delayMilliseconds));
@@ -708,7 +704,7 @@ public class AudioPlaybackEngineTests
     {
         using AudioPlaybackEngine engine = new();
 
-        InvalidOperationException exception =
+        var exception =
             Assert.Throws<InvalidOperationException>(() =>
                 engine.AddLoopingAudioSource("audio.wav", 100));
 
@@ -729,14 +725,14 @@ public class AudioPlaybackEngineTests
         MixingSampleProvider mixer = new(
             WaveFormat.CreateIeeeFloatWaveFormat(44100, 2));
 
-        FieldInfo? mixerField = typeof(AudioPlaybackEngine).GetField(
+        var mixerField = typeof(AudioPlaybackEngine).GetField(
             "mixer",
             BindingFlags.Instance | BindingFlags.NonPublic);
 
         Assert.NotNull(mixerField);
         mixerField.SetValue(engine, mixer);
 
-        ArgumentOutOfRangeException exception =
+        var exception =
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 engine.AddLoopingAudioSource(
                     "nonexistent-audio.wav",
@@ -754,18 +750,18 @@ public class AudioPlaybackEngineTests
         MixingSampleProvider mixer = new(
             WaveFormat.CreateIeeeFloatWaveFormat(44100, 2));
 
-        FieldInfo? mixerField = typeof(AudioPlaybackEngine).GetField(
+        var mixerField = typeof(AudioPlaybackEngine).GetField(
             "mixer",
             BindingFlags.Instance | BindingFlags.NonPublic);
 
         Assert.NotNull(mixerField);
         mixerField.SetValue(engine, mixer);
 
-        ArgumentOutOfRangeException exception =
+        var exception =
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 engine.AddLoopingAudioSource(
                     "nonexistent-audio.wav",
-                    durationMilliseconds: 100,
+                    100,
                     delayMilliseconds: double.MaxValue));
 
         Assert.Equal("delayMilliseconds", exception.ParamName);
@@ -781,7 +777,7 @@ public class AudioPlaybackEngineTests
         double delayMilliseconds,
         int expectedDelayFrames)
     {
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.wav");
 
@@ -803,20 +799,20 @@ public class AudioPlaybackEngineTests
                 ReadFully = true
             };
 
-            FieldInfo? mixerField = typeof(AudioPlaybackEngine).GetField(
+            var mixerField = typeof(AudioPlaybackEngine).GetField(
                 "mixer",
                 BindingFlags.Instance | BindingFlags.NonPublic);
 
             Assert.NotNull(mixerField);
             mixerField.SetValue(engine, mixer);
 
-            MethodInfo? handlerMethod = typeof(AudioPlaybackEngine).GetMethod(
+            var handlerMethod = typeof(AudioPlaybackEngine).GetMethod(
                 "OnMixerInputEnded",
                 BindingFlags.Instance | BindingFlags.NonPublic);
 
             Assert.NotNull(handlerMethod);
 
-            EventHandler<SampleProviderEventArgs> handler =
+            var handler =
                 (EventHandler<SampleProviderEventArgs>)Delegate.CreateDelegate(
                     typeof(EventHandler<SampleProviderEventArgs>),
                     engine,
@@ -824,30 +820,30 @@ public class AudioPlaybackEngineTests
 
             mixer.MixerInputEnded += handler;
 
-            FieldInfo? readersField = typeof(AudioPlaybackEngine).GetField(
+            var readersField = typeof(AudioPlaybackEngine).GetField(
                 "activeReaders",
                 BindingFlags.Instance | BindingFlags.NonPublic);
 
             Assert.NotNull(readersField);
 
-            Dictionary<ISampleProvider, WaveStream> activeReaders =
+            var activeReaders =
                 Assert.IsType<Dictionary<ISampleProvider, WaveStream>>(
                     readersField.GetValue(engine));
 
             engine.AddLoopingAudioSource(
                 path,
-                durationMilliseconds: 2,
-                volume: 50,
-                delayMilliseconds: delayMilliseconds);
+                2,
+                50,
+                delayMilliseconds);
 
             Assert.Single(activeReaders);
 
             // 2 ms at 44100 Hz becomes 88 complete frames.
-            int durationFrames = 88;
-            int totalFrames = expectedDelayFrames + durationFrames + 2;
+            var durationFrames = 88;
+            var totalFrames = expectedDelayFrames + durationFrames + 2;
 
-            float[] output = new float[totalFrames * 2];
-            int samplesRead = mixer.Read(output.AsSpan());
+            var output = new float[totalFrames * 2];
+            var samplesRead = mixer.Read(output.AsSpan());
 
             Assert.Equal(output.Length, samplesRead);
 
@@ -861,7 +857,7 @@ public class AudioPlaybackEngineTests
 
             // Two-frame source: 0.5, 0.25.
             // At 50% volume: 0.25, 0.125.
-            int firstFrame = expectedDelayFrames;
+            var firstFrame = expectedDelayFrames;
 
             Assert.InRange(
                 output[firstFrame * 2],
@@ -908,7 +904,7 @@ public class AudioPlaybackEngineTests
     [Fact]
     public void AddLoopingAudioSource_WhenEngineIsDisposed_ReleasesActiveReader()
     {
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.wav");
 
@@ -927,26 +923,26 @@ public class AudioPlaybackEngineTests
             MixingSampleProvider mixer = new(
                 WaveFormat.CreateIeeeFloatWaveFormat(44100, 2));
 
-            FieldInfo? mixerField = typeof(AudioPlaybackEngine).GetField(
+            var mixerField = typeof(AudioPlaybackEngine).GetField(
                 "mixer",
                 BindingFlags.Instance | BindingFlags.NonPublic);
 
             Assert.NotNull(mixerField);
             mixerField.SetValue(engine, mixer);
 
-            FieldInfo? readersField = typeof(AudioPlaybackEngine).GetField(
+            var readersField = typeof(AudioPlaybackEngine).GetField(
                 "activeReaders",
                 BindingFlags.Instance | BindingFlags.NonPublic);
 
             Assert.NotNull(readersField);
 
-            Dictionary<ISampleProvider, WaveStream> activeReaders =
+            var activeReaders =
                 Assert.IsType<Dictionary<ISampleProvider, WaveStream>>(
                     readersField.GetValue(engine));
 
             engine.AddLoopingAudioSource(
                 path,
-                durationMilliseconds: 1000);
+                1000);
 
             Assert.Single(activeReaders);
 
@@ -970,11 +966,11 @@ public class AudioPlaybackEngineTests
     {
         using AudioPlaybackEngine engine = new();
 
-        ArgumentOutOfRangeException exception =
+        var exception =
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 engine.AddLoopingAudioSource(
                     "audio.wav",
-                    durationMilliseconds: 100,
+                    100,
                     sourceOffsetMilliseconds: sourceOffsetMilliseconds));
 
         Assert.Equal("sourceOffsetMilliseconds", exception.ParamName);
@@ -986,15 +982,15 @@ public class AudioPlaybackEngineTests
     [Fact]
     public void AddLoopingAudioSource_WhenOffsetIsProvided_PreservesPhaseAndDuration()
     {
-        string path = Path.Combine(
+        var path = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid()}.wav");
 
         WaveFormat format = new(44100, 16, 1);
 
-        byte[] audio = new byte[100 * format.BlockAlign];
+        var audio = new byte[100 * format.BlockAlign];
 
-        for (int frame = 0; frame < 100; frame++)
+        for (var frame = 0; frame < 100; frame++)
         {
             audio[frame * 2] = 0;
             audio[frame * 2 + 1] = frame < 50
@@ -1017,7 +1013,7 @@ public class AudioPlaybackEngineTests
                 ReadFully = true
             };
 
-            FieldInfo? mixerField =
+            var mixerField =
                 typeof(AudioPlaybackEngine).GetField(
                     "mixer",
                     BindingFlags.Instance | BindingFlags.NonPublic);
@@ -1027,10 +1023,10 @@ public class AudioPlaybackEngineTests
 
             engine.AddLoopingAudioSource(
                 path,
-                durationMilliseconds: 2,
+                2,
                 sourceOffsetMilliseconds: 1);
 
-            float[] output = new float[90 * 2];
+            var output = new float[90 * 2];
 
             Assert.Equal(
                 output.Length,
@@ -1079,7 +1075,7 @@ public class AudioPlaybackEngineTests
 
         engine.Dispose();
 
-        Exception? exception = Record.Exception(() => engine.Dispose());
+        var exception = Record.Exception(() => engine.Dispose());
 
         Assert.Null(exception);
     }
@@ -1091,7 +1087,7 @@ public class AudioPlaybackEngineTests
 
         engine.Dispose();
 
-        ObjectDisposedException exception =
+        var exception =
             Assert.Throws<ObjectDisposedException>(() => engine.InitializeOutput());
 
         Assert.Equal(
@@ -1120,24 +1116,24 @@ public class AudioPlaybackEngineTests
     {
         using AudioPlaybackEngine engine = new();
 
-        FieldInfo? readersField =
+        var readersField =
             typeof(AudioPlaybackEngine).GetField(
                 "activeReaders",
                 BindingFlags.Instance | BindingFlags.NonPublic);
 
         Assert.NotNull(readersField);
 
-        Dictionary<ISampleProvider, WaveStream> readers =
+        var readers =
             Assert.IsType<Dictionary<ISampleProvider, WaveStream>>(
                 readersField.GetValue(engine));
 
-        TrackingWaveStream failingReader = new(throwOnDispose: true);
+        TrackingWaveStream failingReader = new(true);
         TrackingWaveStream workingReader = new();
 
         readers.Add(new SignalGenerator(44100, 2), failingReader);
         readers.Add(new SignalGenerator(44100, 2), workingReader);
 
-        AggregateException exception =
+        var exception =
             Assert.Throws<AggregateException>(() => engine.Dispose());
 
         Assert.Single(exception.InnerExceptions);
@@ -1150,52 +1146,12 @@ public class AudioPlaybackEngineTests
         engine.Dispose();
     }
 
-    private sealed class TrackingWaveStream : WaveStream
-    {
-        private readonly bool throwOnDispose;
-
-        public bool WasDisposed { get; private set; }
-
-        public TrackingWaveStream(bool throwOnDispose = false)
-        {
-            this.throwOnDispose = throwOnDispose;
-        }
-
-        public override WaveFormat WaveFormat { get; } =
-            WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
-
-        public override long Length => 0;
-
-        public override long Position { get; set; }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            return 0;
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                WasDisposed = true;
-
-                if (throwOnDispose)
-                {
-                    throw new IOException(
-                        "Simulated reader disposal failure.");
-                }
-            }
-
-            base.Dispose(disposing);
-        }
-    }
-
     [Fact]
     public void ScheduleAudioSource_WhenOutputIsNotInitialized_ThrowsInvalidOperationException()
     {
         using AudioPlaybackEngine engine = new();
 
-        InvalidOperationException exception =
+        var exception =
             Assert.Throws<InvalidOperationException>(() => engine.ScheduleAudioSource("unused.wav", 100));
 
         Assert.Equal(
@@ -1210,7 +1166,7 @@ public class AudioPlaybackEngineTests
 
         engine.Dispose();
 
-        ObjectDisposedException exception =
+        var exception =
             Assert.Throws<ObjectDisposedException>(() => engine.ScheduleAudioSource("unused.wav", 100));
 
         Assert.Equal(
@@ -1232,13 +1188,13 @@ public class AudioPlaybackEngineTests
 
         FrameScheduledSampleProvider scheduler = new(mixer);
 
-        FieldInfo? mixerField = typeof(AudioPlaybackEngine).GetField(
+        var mixerField = typeof(AudioPlaybackEngine).GetField(
             "mixer", BindingFlags.Instance | BindingFlags.NonPublic);
 
-        FieldInfo? schedulerField = typeof(AudioPlaybackEngine).GetField(
+        var schedulerField = typeof(AudioPlaybackEngine).GetField(
             "frameScheduler", BindingFlags.Instance | BindingFlags.NonPublic);
 
-        FieldInfo? faultField = typeof(FrameScheduledSampleProvider).GetField(
+        var faultField = typeof(FrameScheduledSampleProvider).GetField(
             "_isFaulted", BindingFlags.Instance | BindingFlags.NonPublic);
 
         Assert.NotNull(mixerField);
@@ -1251,7 +1207,7 @@ public class AudioPlaybackEngineTests
 
         Assert.True(scheduler.IsFaulted);
 
-        string missingPath = Path.Combine(
+        var missingPath = Path.Combine(
             Path.GetTempPath(),
             $"{Guid.NewGuid():N}.wav");
 
@@ -1269,7 +1225,7 @@ public class AudioPlaybackEngineTests
             _ => throw new ArgumentOutOfRangeException(nameof(operation))
         };
 
-        InvalidOperationException exception =
+        var exception =
             Assert.Throws<InvalidOperationException>(action);
 
         Assert.Equal(
@@ -1282,31 +1238,31 @@ public class AudioPlaybackEngineTests
     {
         AudioPlaybackEngine engine = new();
 
-        FieldInfo? timelineField = typeof(AudioPlaybackEngine).GetField(
+        var timelineField = typeof(AudioPlaybackEngine).GetField(
             "timelineReader",
             BindingFlags.Instance | BindingFlags.NonPublic);
 
-        FieldInfo? readersField = typeof(AudioPlaybackEngine).GetField(
+        var readersField = typeof(AudioPlaybackEngine).GetField(
             "activeReaders",
             BindingFlags.Instance | BindingFlags.NonPublic);
 
         Assert.NotNull(timelineField);
         Assert.NotNull(readersField);
 
-        TrackingWaveStream failingTimelineReader = new(throwOnDispose: true);
-        TrackingWaveStream failingActiveReader = new(throwOnDispose: true);
+        TrackingWaveStream failingTimelineReader = new(true);
+        TrackingWaveStream failingActiveReader = new(true);
         TrackingWaveStream workingActiveReader = new();
 
         timelineField.SetValue(engine, failingTimelineReader);
 
-        Dictionary<ISampleProvider, WaveStream> readers =
+        var readers =
             Assert.IsType<Dictionary<ISampleProvider, WaveStream>>(
                 readersField.GetValue(engine));
 
         readers.Add(new SignalGenerator(44100, 2), failingActiveReader);
         readers.Add(new SignalGenerator(44100, 2), workingActiveReader);
 
-        AggregateException exception =
+        var exception =
             Assert.Throws<AggregateException>(() => engine.Dispose());
 
         Assert.Equal(2, exception.InnerExceptions.Count);
@@ -1323,5 +1279,288 @@ public class AudioPlaybackEngineTests
         Assert.Empty(readers);
 
         Assert.Null(Record.Exception(() => engine.Dispose()));
+    }
+
+    [Fact]
+    public void OnMixerInputEnded_WhenReaderDisposalFails_RetainsReaderForCleanup()
+    {
+        AudioPlaybackEngine engine = new();
+
+        MixingSampleProvider mixer = new(
+            WaveFormat.CreateIeeeFloatWaveFormat(44100, 2))
+        {
+            ReadFully = true
+        };
+
+        var mixerField = typeof(AudioPlaybackEngine).GetField(
+            "mixer",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(mixerField);
+        mixerField.SetValue(engine, mixer);
+
+        var handlerMethod = typeof(AudioPlaybackEngine).GetMethod(
+            "OnMixerInputEnded",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(handlerMethod);
+
+        var handler =
+            (EventHandler<SampleProviderEventArgs>)Delegate.CreateDelegate(
+                typeof(EventHandler<SampleProviderEventArgs>),
+                engine,
+                handlerMethod);
+
+        mixer.MixerInputEnded += handler;
+
+        var readersField = typeof(AudioPlaybackEngine).GetField(
+            "activeReaders",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(readersField);
+
+        var readers =
+            Assert.IsType<Dictionary<ISampleProvider, WaveStream>>(
+                readersField.GetValue(engine));
+
+        TrackingWaveStream failingReader = new(true);
+
+        ISampleProvider mixerInput = new OffsetSampleProvider(
+            new SignalGenerator(44100, 2))
+        {
+            TakeSamples = 2
+        };
+
+        readers.Add(mixerInput, failingReader);
+        mixer.AddMixerInput(mixerInput);
+
+        Assert.Throws<IOException>(() => mixer.Read(new float[4].AsSpan()));
+
+        Assert.True(failingReader.WasDisposed);
+        Assert.Same(failingReader, readers[mixerInput]);
+
+        var cleanupError =
+            Assert.Throws<AggregateException>(() => engine.Dispose());
+
+        Assert.Contains(
+            cleanupError.InnerExceptions,
+            exception => exception is IOException);
+
+        Assert.Empty(readers);
+        Assert.Null(Record.Exception(() => engine.Dispose()));
+    }
+
+    [Fact]
+    public void AddLoopingAudioSource_WhenMixerRegistrationFails_RollsBackAndReleasesReader()
+    {
+        var path = Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid():N}.wav");
+
+        WaveFormat format = new(44100, 16, 1);
+
+        using (WaveFileWriter writer = new(path, format))
+        {
+            byte[] audio = { 0, 64, 0, 32 };
+            writer.Write(audio, 0, audio.Length);
+        }
+
+        try
+        {
+            using AudioPlaybackEngine engine = new();
+
+            // The engine normalizes audio to stereo, but this mixer
+            // deliberately accepts mono. Registration must fail.
+            MixingSampleProvider mixer = new(
+                WaveFormat.CreateIeeeFloatWaveFormat(44100, 1));
+
+            var mixerField = typeof(AudioPlaybackEngine).GetField(
+                "mixer",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            var readersField = typeof(AudioPlaybackEngine).GetField(
+                "activeReaders",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.NotNull(mixerField);
+            Assert.NotNull(readersField);
+
+            mixerField.SetValue(engine, mixer);
+
+            var activeReaders =
+                Assert.IsType<Dictionary<ISampleProvider, WaveStream>>(
+                    readersField.GetValue(engine));
+
+            var exception = Assert.Throws<ArgumentException>(() => engine.AddLoopingAudioSource(
+                path,
+                2));
+
+            Assert.Contains(
+                "All mixer inputs must have the same WaveFormat",
+                exception.Message);
+
+            // A failed registration must not retain the mixer input.
+            Assert.Empty(mixer.MixerInputs);
+
+            // The engine must not retain ownership of a released reader.
+            Assert.Empty(activeReaders);
+
+            // Verify that the reader no longer holds the audio file open.
+            using FileStream exclusiveAccess = new(
+                path,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None);
+
+            Assert.True(exclusiveAccess.CanRead);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void OnMixerInputEnded_WhenReaderDisposalFails_FaultsScheduler()
+    {
+        AudioPlaybackEngine engine = new();
+
+        MixingSampleProvider mixer = new(
+            WaveFormat.CreateIeeeFloatWaveFormat(44100, 2))
+        {
+            ReadFully = true
+        };
+
+        FrameScheduledSampleProvider scheduler = new(mixer);
+
+        var mixerField = typeof(AudioPlaybackEngine).GetField(
+            "mixer",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        var readersField = typeof(AudioPlaybackEngine).GetField(
+            "activeReaders",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        var callbackMethod = typeof(AudioPlaybackEngine).GetMethod(
+            "OnMixerInputEnded",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(mixerField);
+        Assert.NotNull(readersField);
+        Assert.NotNull(callbackMethod);
+
+        mixerField.SetValue(engine, mixer);
+
+        var callback =
+            (EventHandler<SampleProviderEventArgs>)Delegate.CreateDelegate(
+                typeof(EventHandler<SampleProviderEventArgs>),
+                engine,
+                callbackMethod);
+
+        mixer.MixerInputEnded += callback;
+
+        var activeReaders =
+            Assert.IsType<Dictionary<ISampleProvider, WaveStream>>(
+                readersField.GetValue(engine));
+
+        TrackingWaveStream failingReader = new(true);
+
+        // One stereo frame. Reading two frames reaches the end
+        // and causes MixingSampleProvider to raise MixerInputEnded.
+        OffsetSampleProvider finiteSource = new(
+            new SignalGenerator(44100, 2))
+        {
+            TakeSamples = 2
+        };
+
+        activeReaders.Add(finiteSource, failingReader);
+        mixer.AddMixerInput(finiteSource);
+
+        var originalException = Assert.Throws<IOException>(() => scheduler.Read(new float[4]));
+
+        Assert.Equal(
+            "Simulated reader disposal failure.",
+            originalException.Message);
+
+        Assert.True(failingReader.WasDisposed);
+        Assert.True(scheduler.IsFaulted);
+        Assert.Equal(0L, scheduler.FramesRead);
+
+        // Ownership remains registered because cleanup failed.
+        Assert.Single(activeReaders);
+        Assert.Same(failingReader, activeReaders[finiteSource]);
+
+        // The mixer callback threw before NAudio could remove the input.
+        Assert.Contains(finiteSource, mixer.MixerInputs);
+
+        var readException =
+            Assert.Throws<InvalidOperationException>(() => scheduler.Read(new float[4]));
+
+        Assert.Equal(
+            "The frame scheduler is faulted and cannot be used.",
+            readException.Message);
+
+        scheduler.ResetScheduling();
+
+        Assert.True(scheduler.IsFaulted);
+
+        var scheduleException =
+            Assert.Throws<InvalidOperationException>(() => scheduler.Schedule(
+                new SignalGenerator(44100, 2),
+                0));
+
+        Assert.Equal(
+            "The frame scheduler is faulted and cannot be used.",
+            scheduleException.Message);
+
+        var cleanupException =
+            Assert.Throws<AggregateException>(() => engine.Dispose());
+
+        Assert.Single(cleanupException.InnerExceptions);
+        Assert.IsType<IOException>(
+            cleanupException.InnerExceptions[0]);
+
+        Assert.Empty(activeReaders);
+        Assert.Empty(mixer.MixerInputs);
+
+        Assert.Null(Record.Exception(() => engine.Dispose()));
+    }
+
+    private sealed class TrackingWaveStream : WaveStream
+    {
+        private readonly bool throwOnDispose;
+
+        public TrackingWaveStream(bool throwOnDispose = false)
+        {
+            this.throwOnDispose = throwOnDispose;
+        }
+
+        public bool WasDisposed { get; private set; }
+
+        public override WaveFormat WaveFormat { get; } =
+            WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
+
+        public override long Length => 0;
+
+        public override long Position { get; set; }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return 0;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                WasDisposed = true;
+
+                if (throwOnDispose)
+                    throw new IOException(
+                        "Simulated reader disposal failure.");
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }
